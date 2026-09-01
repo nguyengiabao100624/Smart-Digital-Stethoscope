@@ -1,6 +1,16 @@
 # Smart Health - Implementation Status
 
-Last updated: 2026-08-31
+Last updated: 2026-09-01
+
+## 2026-09-01 production synchronization and Xiaomi verification
+
+- **PASS/LIVE - backend:** Render release `git-08105905a462` is healthy at `https://shcare-api-prod.onrender.com`. The replacement Render account/service is canonical; retired `r5is` and `xj0a` services are not production dependencies. Backend syntax and base smoke pass after the notification-inbox authority/security repair.
+- **PASS/LIVE - data and authority:** Supabase migrations `001-056`, production role smoke, platform-admin inbox scope, tenant-negative checks, Firebase email verification, public deployment and Portal production smoke pass. Platform admins can read only their own cross-workspace personal inbox; tenant users remain workspace exact.
+- **PASS/LIVE - Admin:** the full mutation smoke passes through API mutations, all Admin routes and cleanup. Cleanup returned HTTP 200 for settings, notification, bucket, patient, invitation, managed admin, workspace and archived package. Firebase Hosting version is `79f1596432a2d549`.
+- **PASS/LIVE - Public/Portal:** production build and deployment are current on Firebase Hosting version `554570a43b88f25d`; public and authenticated Portal smokes pass against the same backend.
+- **PASS/DEVICE - Android:** debug APK `1.0.0-rc.2` was built and installed on Xiaomi with SHA-256 `F4FEA79E559377FF8FD9A7D89B4C7142084E76C336D3230F5112145F2D6D6814`. An authenticated production cold start reached the doctor dashboard with the correct user/workspace. JVM `860/860`, lint `0`, and physical instrumentation `96` total / `0` failed / `8` gated skips pass. The final post-test reinstall opens Login cleanly because the instrumentation runner removed application data; this is not a server outage.
+- **PASS/BUILD+FLASH, OPEN/RUNTIME - firmware:** production and OTA images build with hashes `C731711F...C3E82` and `D495357D...0B6D`. The retained external factory/HIL configuration now targets the replacement backend; a clean rebuild produced `54337CE5...C7D87` and was wired-flashed to COM9 with write-hash verification, no full erase and no eFuse mutation. Both I2S microphones remain active. Wi-Fi association fails with `201 NO_AP_FOUND`, so the backend correctly reports devices online `0`; WSS, command ACK, durable scan, OTA success and forced rollback remain open until Wi-Fi is re-entered in the secure App field.
+- **Release status:** cloud deployment is complete and rollback-safe, but overall G4 remains partial until the current factory credential/trust material is provisioned to the attached board through the approved reversible HIL workflow and the complete production hardware chain passes. Release APK signing and eFuse burning are intentionally outside the user's requested acceptance boundary.
 
 ## 2026-08-31 replacement backend synchronization
 

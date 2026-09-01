@@ -1,6 +1,20 @@
 # Smart Health - Production Backlog
 
-Last updated: 2026-08-31
+Last updated: 2026-09-01
+
+## 2026-09-01 authoritative remaining G4 gates
+
+- [x] Stabilize the replacement Render backend and Supabase session-pooler connection; apply migrations `001-056` and remove redundant runtime snapshot writes.
+- [x] Deploy backend release `git-08105905a462` and verify health, exact CORS, authentication, tenant isolation, personal notification inbox and production role boundaries.
+- [x] Run the complete Admin mutation smoke and deterministic cleanup; all mutation and cleanup receipts pass.
+- [x] Deploy Platform Admin Firebase version `79f1596432a2d549` and Public/Workspace Portal version `554570a43b88f25d`; public and authenticated Portal production smokes pass.
+- [x] Build and install Android `1.0.0-rc.2` on Xiaomi; verify the production host, authenticated dashboard, `860/860` JVM tests, zero-issue lint and physical instrumentation with zero failures.
+- [x] Build current ESP32-S3 production and OTA artifacts and verify COM9 plus non-zero audio from both physical microphone channels without erasing flash or burning eFuses.
+- [x] Rebuild and wired-flash the COM9 HIL image against the replacement Render host using the retained external factory credential/trust material; clean the environment first to prevent stale-header object reuse. New image hash is `54337CE5A6759867DF211EE100A590442D513338EA65496C09E6ED146BBC7D87`; no secret was emitted and no full erase/eFuse change occurred.
+- [ ] In the App's secure field, re-enter the current `Gia_Bao` target-network password. The board retains an older Wi-Fi profile and serial currently returns association reason `201 NO_AP_FOUND`; do not place the password in ADB, shell, source, environment variables, logs or documentation.
+- [ ] Prove the current production chain: authenticated WSS presence -> command ACK -> two-source audio-v2 -> durable completed scan -> signed OTA success -> deliberately failed OTA rollback. Current production device metric is `0`, so this gate is not PASS.
+- [ ] After the hardware canary, run the bounded one-device Render bandwidth observation and confirm the repaired telemetry path stays below the documented operational ceiling.
+- [ ] G4 remains **PARTIAL** until the three runtime rows above pass. Android release signing and irreversible eFuse/flash-encryption activation are not required by the user's current acceptance scope and must not be performed implicitly.
 
 ## 2026-08-31 replacement backend/login recovery
 

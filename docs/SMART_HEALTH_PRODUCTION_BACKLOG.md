@@ -2831,5 +2831,7 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - [x] Split operational Wi-Fi provisioning from ownership administration in Android UI and backend authorization.
 - [x] Add positive assigned-owner and negative same-workspace/non-owner setup-session coverage.
 - [x] Install and instrument the corrected APK on the connected Xiaomi.
-- [ ] Push the candidate and wait for `https://shcare-api-prod.onrender.com` to report the matching release marker.
-- [ ] Run the authenticated production doctor device/Wi-Fi canary after Render is live; keep Add/release/transfer unavailable without device-manage authority.
+- [x] Accept a canonical responsible doctor when Admin allocation has lifecycle state `unassigned` because no patient is attached; continue rejecting ownerless inventory.
+- [x] Deploy Render release `bcf42562ab7c` and pass public health/auth/Admin/Portal rewrite smoke.
+- [x] Run the authenticated production canary for the exact assigned doctor/device: setup-session HTTP `200`, ESPTouch V2, AES-128.
+- [ ] Repeat the signed-in visual dashboard tap after login; the instrumentation installation cleared the prior Firebase session and no credential was injected through ADB. Add/release/transfer remain unavailable without device-manage authority by contract and on-device UI tests.

@@ -3189,5 +3189,7 @@ KLTN report artifacts generated from this evidence set:
 - [x] Show Wi-Fi provisioning for an assigned doctor, hide Add and release, and provide truthful read-only/assigned explanatory copy.
 - [x] Prove same-workspace but non-assigned Wi-Fi setup is rejected with `403` and no tenant data or verifier is disclosed.
 - [x] Pass backend device-security `86/86`, check/aggregate smoke, Android unit/assemble/lint and three Xiaomi Compose instrumentation tests.
-- [x] Install APK SHA-256 `2750938E7064B305E43B5E4E36104193127DA99E2005CA9915790E9370B95E96` on Xiaomi `21081111RG` while retaining app data.
-- [ ] Confirm the Render release marker contains this backend commit, then repeat the signed-in doctor tap and ESPTouch setup-session canary against production.
+- [x] Install APK SHA-256 `2750938E7064B305E43B5E4E36104193127DA99E2005CA9915790E9370B95E96` on Xiaomi `21081111RG`.
+- [x] Fix the Admin-allocation `unassigned`/canonical-owner mismatch discovered by the first live canary; keep a truly ownerless inventory device rejected with `409`.
+- [x] Confirm Render release `bcf42562ab7c` and pass public deployment plus the exact authenticated doctor/assigned-device ESPTouch V2 setup-session canary with HTTP `200`.
+- [ ] Repeat only the visual dashboard tap after the doctor signs in again; the test APK installation cleared the prior Firebase session and credentials were deliberately not injected through ADB.

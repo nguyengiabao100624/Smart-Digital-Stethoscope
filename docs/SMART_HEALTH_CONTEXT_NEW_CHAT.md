@@ -2,11 +2,21 @@
 
 Last updated: 2026-09-02
 
+## 2026-09-02 final cloud mutation and live device-assignment checkpoint
+
+- At verification time Render was healthy on backend implementation marker `git-73669c92fadd` at `https://shcare-api-prod.onrender.com`; later documentation-only commits do not change that runtime implementation. The production fix series is `fd35db18` (nullable device timestamps), `c80fb6f6` (nullable device ownership references), `a932bdfe` (patient-share references) and `73669c92` (system-wide optional relationship normalization).
+- The Supabase runtime role does not own `identity_operations`, so migration `057` is a durable marker instead of an unsafe `ALTER TABLE`. The application maps logical `doctor_workspace_assign` receipts to the released `change_role` storage discriminator while retaining `identityOperationKind=doctor_workspace_assign`; workspace-access, identity, Firebase compatibility and device-security tests cover this bridge.
+- Production mutation evidence PASS: Portal run `portal-mutation-mtjvhke8` completed patient create/update/delete/replay, appointment lifecycle, notification read/delete, doctor consent share/revoke, profile/workspace/preferences restore, report export and session recovery. Admin run `admin-mutation-mtjvqho6` completed workspace, managed-admin, package, patient, doctor invitation, notification, storage/settings and 15 route checks. Every reported cleanup completed successfully.
+- Public deployment and authenticated Portal role/read smokes PASS. Platform Admin is correctly denied Portal access; workspace and doctor identities receive their exact tenant-scoped surfaces.
+- The approved doctor `usr_20260828091945_bf3c594e` is active in `org_default_clinic`. Device `shcare-g3-prod-demo` is assigned to that exact doctor, the assignment replay is idempotent, and the device is visible through that doctor's real Portal identity. It is intentionally not assigned to a patient yet.
+- Android `1.0.0-rc.2` APK SHA-256 `C908A35E32B97A63A0B8669F10C0C2D6459598BF83FBE7F151199A56141DA9E7` remains installed on Xiaomi. A fresh cold start completed in `774 ms`; the process stayed alive with no crash, DNS/SSL, 401/403 or 5xx log. The handset remained asleep, so a new visual/TalkBack proof was not fabricated.
+- COM9 read-only serial proves both I2S slot active-window counters continue increasing, but transport counters remain `wss=0` and `udp=0`; backend presence therefore truthfully reports the device offline. Production WSS, ACK, audio-v2, durable scan, signed OTA/rollback and the bandwidth canary remain the only hard runtime gates before overall G4 PASS.
+
 ## 2026-09-02 doctor workspace reassignment deployment checkpoint
 
 - Live verification found that the approved doctor `usr_20260828091945_bf3c594e` already owns another active workspace, so the generic `change_role` operation correctly rejected a destructive primary-workspace switch. Doctor assignment now has its own audited `doctor_workspace_assign` saga: it preserves existing owner/admin memberships, activates the doctor membership in the selected workspace, updates the primary workspace and Firebase claims, and revokes stale sessions.
-- PostgreSQL migration `057_identity_doctor_workspace_assignment.sql` extends the identity-operation allowlist without removing the existing `managed_admin_activate` operation. Local backend check, workspace-access, managed-admin transition/create, Firebase compatibility, device security `86/86`, identity-migration and diff checks PASS.
-- Source candidate is `43356130`; Admin and Portal device-assignment surfaces are already live from candidate `435e7580`. Render still reports `git-76b7060db388` at this checkpoint, so live doctor/device repair and Xiaomi verification must wait for the migration-bearing marker and must not be reported as complete yet.
+- PostgreSQL migration `057_identity_doctor_workspace_assignment.sql` is a durable marker because the Supabase runtime role cannot alter the owner-controlled allowlist. The logical operation is persisted through the released `change_role` discriminator and retains its dedicated operation kind in the target state. Local backend check, workspace-access, managed-admin transition/create, Firebase compatibility, device security `86/86`, identity-migration and diff checks PASS.
+- This was a precursor checkpoint. Its pending live work is superseded by the final cloud mutation checkpoint above.
 
 ## 2026-09-02 unified device assignment and claim-code boundary
 

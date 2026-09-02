@@ -2,12 +2,23 @@
 
 Last updated: 2026-09-02
 
+## 2026-09-02 authoritative final cloud checkpoint
+
+- [x] Deploy and verify Render marker `git-73669c92fadd`; normalize nullable timestamps and optional relationship identifiers so PostgreSQL never receives empty-string timestamps or foreign keys.
+- [x] Run full Portal production mutation `portal-mutation-mtjvhke8`, public deployment and authenticated role/read smokes; verify consent, settings, export, replay, logout/recovery and cleanup.
+- [x] Run full Platform Admin production mutation `admin-mutation-mtjvqho6`; verify workspace/admin/package/patient/doctor/notification/storage/settings, 15 routes and cleanup.
+- [x] Assign `shcare-g3-prod-demo` idempotently to the exact approved doctor in `org_default_clinic` and verify visibility through that doctor's Firebase/Portal identity.
+- [x] Keep Android APK `C908A35E...A9E7` installed and cold-start it on Xiaomi without crash or backend/auth/network errors.
+- [ ] Physically wake Xiaomi and capture a fresh visual/TalkBack/lifecycle pass; ADB cannot inject wake/input on this MIUI state.
+- [ ] Restore the board's approved production Wi-Fi/credential path, then prove WSS -> command ACK -> dual-mic audio-v2 -> durable scan -> signed OTA success -> forced rollback. Current serial truth is `wss=0`, `udp=0` even though both I2S channels are active.
+- [ ] Run the bounded one-device Render bandwidth canary after WSS is restored. Overall G4 remains **PARTIAL** until these three physical/provider checks pass.
+
 ## 2026-09-02 doctor/device live repair checkpoint
 
 - [x] Separate approved-doctor workspace assignment from destructive account role changes; preserve existing workspace-owner/admin memberships and refresh provider claims/sessions safely.
-- [x] Add migration `057` for `doctor_workspace_assign` while retaining the complete existing operation allowlist, including `managed_admin_activate`; pass focused security, repository and migration tests.
-- [ ] Wait for Render to expose the migration-bearing candidate (source `43356130`; live marker at checkpoint `git-76b7060db388`), then repair and verify the real doctor/workspace/device assignment idempotently.
-- [ ] Reopen the installed Xiaomi app after session revocation and prove that the doctor dashboard and assigned device settle without the secure-connection loop.
+- [x] Persist logical `doctor_workspace_assign` through the released `change_role` database discriminator while retaining its dedicated operation kind; keep migration `057` ownership-safe and pass focused security, repository and migration tests.
+- [x] Deploy the repair and verify the real doctor/workspace/device assignment idempotently on Render `git-73669c92fadd`.
+- [x] Cold-start the installed Xiaomi app after session changes with no crash or backend/auth/network error. Fresh visual proof remains listed separately because the phone is asleep.
 
 ## 2026-09-02 device assignment and claim handover slice
 

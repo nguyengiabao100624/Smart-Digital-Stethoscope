@@ -2,11 +2,20 @@
 
 Last updated: 2026-09-02
 
+## 2026-09-02 production cloud closure and remaining hardware boundary
+
+- **PASS/LIVE - backend:** Render served backend implementation marker `git-73669c92fadd` during final mutation verification; later documentation-only commits do not change that runtime implementation. Nullable timestamp and foreign-key persistence is normalized for devices, users, workspaces, patients, appointments, shares, claims, scans, commands, notifications and exports; repository, workspace-access, syntax and device-security `86/86` gates PASS.
+- **PASS/LIVE - Portal:** mutation run `portal-mutation-mtjvhke8` and authenticated role/read smoke PASS, including patient, appointment, notification, consent, settings, report export, idempotency, tenant-negative and session recovery. All temporary state is deleted or restored.
+- **PASS/LIVE - Platform Admin:** mutation run `admin-mutation-mtjvqho6` PASS with 40 capabilities, complete managed workspace/admin/package/patient/doctor/notification/storage/settings lifecycles, 15 route checks and successful cleanup.
+- **PASS/LIVE - doctor/device authority:** `shcare-g3-prod-demo` is durably assigned to doctor `usr_20260828091945_bf3c594e` in `org_default_clinic`, retries replay safely, and the exact doctor's Firebase/Portal identity can list the device.
+- **PASS/DEVICE - Android process:** production-connected debug APK `C908A35E...A9E7` is installed; cold start is healthy and no network/auth/server error appears in the captured log. **OPEN/VISUAL:** Xiaomi is asleep, so fresh screen/TalkBack evidence still requires a physical wake.
+- **OPEN/HARDWARE:** COM9 firmware and both I2S inputs are alive, but `wss=0`/`udp=0` and the production device is offline. Do not mark G4 complete until WSS -> ACK -> two-source audio-v2 -> durable scan -> signed OTA success -> forced rollback and the post-fix Render bandwidth canary pass.
+
 ## 2026-09-02 doctor workspace assignment follow-up
 
 - **PASS/SOURCE+SECURITY:** approved-doctor assignment uses the dedicated audited `doctor_workspace_assign` identity operation. It preserves privileged memberships in other workspaces, creates/activates the target doctor membership, updates primary workspace/provider claims and revokes stale sessions instead of misusing the destructive role-change guard.
-- **PASS/MIGRATION:** migration `057` retains every previously valid identity operation, including `managed_admin_activate`, and adds `doctor_workspace_assign`. Backend check, workspace-access, role-transition/create, Firebase compatibility, identity-migration and device-security `86/86` gates pass.
-- **PENDING/LIVE:** candidate `43356130` is pushed, while the public Render marker remains `git-76b7060db388`. Do not run or claim the production doctor/device mutation until the migration-bearing marker is healthy; then verify idempotent assignment and Android session recovery on Xiaomi.
+- **PASS/PERSISTENCE:** migration `057` is an ownership-safe marker. The dedicated logical operation is durably bridged through the already released `change_role` database discriminator and retains its exact operation kind in state. Backend check, workspace-access, role-transition/create, Firebase compatibility, identity-migration and device-security `86/86` gates pass.
+- **PASS/LIVE:** the candidate is superseded by `git-73669c92fadd`; exact doctor/device assignment, idempotent replay and Portal visibility are verified in production.
 
 ## 2026-09-02 unified device assignment and claim handover
 

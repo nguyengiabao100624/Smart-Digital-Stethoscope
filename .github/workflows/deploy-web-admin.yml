@@ -2,6 +2,12 @@ name: Deploy Web Admin
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "smart-health-admin/**"
+      - ".github/workflows/deploy-web-admin.yml"
 
 concurrency:
   group: deploy-web-admin

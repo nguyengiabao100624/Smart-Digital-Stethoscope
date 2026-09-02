@@ -20596,7 +20596,11 @@ async function handleDevicesApi(req, res, url, segments) {
       );
     }
     assertDeviceSetupRateLimit(req, user.id, device.id);
-    if (inferDeviceOwnershipState(device) !== "claimed") {
+    // Admin allocation uses `unassigned` to mean "no patient is assigned yet" even when a
+    // responsible doctor already owns the device. Wi-Fi provisioning is bound to that canonical
+    // owner, not to the patient-assignment lifecycle label.
+    const assignedPrincipalId = readString(device.ownerUserId || device.pairedUserId, 120);
+    if (!assignedPrincipalId) {
       throw httpError(
         409,
         "The device must be assigned before Wi-Fi setup can be opened",

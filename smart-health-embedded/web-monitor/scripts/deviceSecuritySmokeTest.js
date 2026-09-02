@@ -357,7 +357,9 @@ function writeSeedDb() {
             type: "stethoscope",
             status: "available",
             organizationId: "org_alpha",
-            ownershipState: "claimed",
+            // Mirrors the platform-admin allocation workflow: a responsible doctor is assigned,
+            // while no patient has been assigned to the device yet.
+            ownershipState: "unassigned",
             ownerUserId: "usr_doctor_alpha",
             pairedUserId: "usr_doctor_alpha",
             connected: false,

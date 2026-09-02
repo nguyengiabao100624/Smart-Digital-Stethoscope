@@ -123,6 +123,7 @@ const guardChecks = {
   patientEmptyBloodTypeNull: false,
   deviceOwnershipColumns: false,
   patientShareScanIds: false,
+  patientShareNullableForeignKeys: false,
   scanPageTenantScope: false,
   scanPageLiteralSearch: false,
   notificationTokenGlobalConflict: false,
@@ -301,6 +302,8 @@ const pool = {
       guardChecks.patientShareScanIds =
         text.includes("scan_ids") &&
         text.includes("$1, $2, $2, $3");
+      guardChecks.patientShareNullableForeignKeys ||=
+        params[3] === null && params[13] === null;
       return {
         rows: [{
           id: params[0],
@@ -727,6 +730,11 @@ async function main() {
   );
   assert.equal(guardChecks.deviceOwnershipColumns, true);
   assert.equal(guardChecks.patientShareScanIds, true);
+  assert.equal(
+    guardChecks.patientShareNullableForeignKeys,
+    true,
+    "doctor shares must persist empty workspace and revocation references as SQL NULL",
+  );
 
   const duplicateSessionDb = {
     sessions: [],

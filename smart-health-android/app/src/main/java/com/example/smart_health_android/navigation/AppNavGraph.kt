@@ -1523,6 +1523,9 @@ fun AppNavGraph(
             ),
         ) { backStackEntry ->
             val deviceId = Uri.decode(backStackEntry.arguments?.getString("deviceId").orEmpty())
+            val canManageDevice = routeAccessContext
+                ?.capabilities
+                ?.any(MobileRouteCapabilities.DeviceManage::contains) == true
             DeviceManagementScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onAddDevice = { navController.navigate("device-pairing?returnRoute=settings") },
@@ -1530,6 +1533,8 @@ fun AppNavGraph(
                     navController.navigate("device-wifi/${Uri.encode(deviceId)}")
                 },
                 initialDeviceId = deviceId,
+                canManageDevice = canManageDevice,
+                currentUserId = routeAccessContext?.userId.orEmpty(),
             )
         }
 
@@ -1544,6 +1549,9 @@ fun AppNavGraph(
             ),
         ) { backStackEntry ->
             val deviceId = Uri.decode(backStackEntry.arguments?.getString("deviceId").orEmpty())
+            val canManageDevice = routeAccessContext
+                ?.capabilities
+                ?.any(MobileRouteCapabilities.DeviceManage::contains) == true
             DeviceManagementScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onAddDevice = { navController.navigate("device-pairing?returnRoute=settings") },
@@ -1551,6 +1559,8 @@ fun AppNavGraph(
                     navController.navigate("device-wifi/${Uri.encode(resolvedDeviceId)}")
                 },
                 initialDeviceId = deviceId,
+                canManageDevice = canManageDevice,
+                currentUserId = routeAccessContext?.userId.orEmpty(),
             )
         }
 

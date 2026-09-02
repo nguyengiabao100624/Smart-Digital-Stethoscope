@@ -3180,3 +3180,14 @@ KLTN report artifacts generated from this evidence set:
 - [x] Pass Admin, Web, backend, Android and ESP32 production/OTA build gates listed in the current handoff.
 - [ ] Repeat Xiaomi install/visual/TalkBack and COM serial/WSS/audio/OTA HIL when those devices are physically visible; current ADB and Windows port discovery return no device.
 - [ ] Install a system native C/C++ compiler if the optional PlatformIO `native` Unity gate is required on this workstation; this does not block the successful ESP32 firmware builds.
+
+## 2026-09-02 — Assigned-doctor device details and Wi-Fi access
+
+- [x] Reproduce the doctor dashboard denial with a red route-contract test.
+- [x] Let `workspace.devices.view` open device details while keeping pairing/add/release routes behind device-manage authority.
+- [x] Let only the exact assigned owner/paired user or a device manager create an encrypted ESPTouch setup session.
+- [x] Show Wi-Fi provisioning for an assigned doctor, hide Add and release, and provide truthful read-only/assigned explanatory copy.
+- [x] Prove same-workspace but non-assigned Wi-Fi setup is rejected with `403` and no tenant data or verifier is disclosed.
+- [x] Pass backend device-security `86/86`, check/aggregate smoke, Android unit/assemble/lint and three Xiaomi Compose instrumentation tests.
+- [x] Install APK SHA-256 `2750938E7064B305E43B5E4E36104193127DA99E2005CA9915790E9370B95E96` on Xiaomi `21081111RG` while retaining app data.
+- [ ] Confirm the Render release marker contains this backend commit, then repeat the signed-in doctor tap and ESPTouch setup-session canary against production.

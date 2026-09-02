@@ -7157,6 +7157,35 @@ function assertCanManageDevice(user, device) {
   }
 }
 
+function canProvisionAssignedDeviceWifi(user, device) {
+  if (!canAccessDevice(user, device)) {
+    return false;
+  }
+  if (canManageDevice(user, device)) {
+    return true;
+  }
+  const userId = readString(user.id, 120);
+  const isAssignedUser = Boolean(
+    userId && [device.ownerUserId, device.pairedUserId].some(
+      (candidate) => readString(candidate, 120) === userId,
+    ),
+  );
+  return (
+    isAssignedUser &&
+    hasWorkspaceDeviceCapability(user, getDeviceWorkspaceId(device), ["workspace.devices.view"])
+  );
+}
+
+function assertCanProvisionAssignedDeviceWifi(user, device) {
+  if (!canProvisionAssignedDeviceWifi(user, device)) {
+    throw httpError(
+      403,
+      "Chỉ người được phân công thiết bị hoặc quản trị viên mới có thể kết nối Wi-Fi",
+      "DEVICE_WIFI_SETUP_FORBIDDEN",
+    );
+  }
+}
+
 function filterDevicesForUser(user, devices) {
   if (isPlatformAdminUser(user)) {
     return devices;
@@ -20552,9 +20581,9 @@ async function handleDevicesApi(req, res, url, segments) {
   }
 
   if (segments.length === 4 && segments[3] === "setup-session" && method === "POST") {
-    // Device assignment and DeviceManage remain the boundary before an app may
-    // open an encrypted SmartConfig session for this tenant-scoped device.
-    assertCanManageDevice(user, device);
+    // An assigned user may provision only their own device. Ownership mutations
+    // still require DeviceManage; tenant scope and assignment are checked here.
+    assertCanProvisionAssignedDeviceWifi(user, device);
     const payload = await readJsonBody(req);
     const requestedTransports = Array.isArray(payload.supportedTransports)
       ? payload.supportedTransports.map((item) => readString(item, 80))

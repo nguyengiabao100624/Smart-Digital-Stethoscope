@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.smart_health_android.R
+import com.example.smart_health_android.data.SmartDevice
 import com.example.smart_health_android.devices.DeviceFreshness
 import com.example.smart_health_android.devices.DeviceFreshnessStatus
 import com.example.smart_health_android.devices.DeviceHealthSnapshot
@@ -99,6 +100,8 @@ fun BluetoothSettingsScreen(
     onAddDevice: () -> Unit,
     onConfigureWifi: (String) -> Unit = {},
     initialDeviceId: String = "",
+    canManageDevice: Boolean = true,
+    currentUserId: String = "",
     viewModel: DeviceManagementViewModel = viewModel(),
 ) {
     DeviceManagementScreen(
@@ -106,6 +109,8 @@ fun BluetoothSettingsScreen(
         onAddDevice = onAddDevice,
         onConfigureWifi = onConfigureWifi,
         initialDeviceId = initialDeviceId,
+        canManageDevice = canManageDevice,
+        currentUserId = currentUserId,
         viewModel = viewModel,
     )
 }
@@ -117,6 +122,8 @@ fun DeviceManagementScreen(
     onAddDevice: () -> Unit,
     onConfigureWifi: (String) -> Unit = {},
     initialDeviceId: String = "",
+    canManageDevice: Boolean = true,
+    currentUserId: String = "",
     viewModel: DeviceManagementViewModel = viewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -130,7 +137,7 @@ fun DeviceManagementScreen(
 
     val pendingRelease = state.devices.firstOrNull { it.id == pendingReleaseId }
 
-    pendingRelease?.let { device ->
+    if (canManageDevice) pendingRelease?.let { device ->
         val name = DeviceHealthSnapshot.from(device).displayName()
         AlertDialog(
             onDismissRequest = { pendingReleaseId = null },
@@ -186,15 +193,19 @@ fun DeviceManagementScreen(
                             )
                         }
                     }
-                    IconButton(
-                        onClick = onAddDevice,
-                        enabled = !state.isMutating,
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = stringResource(R.string.device_management_add),
-                        )
+                    if (canManageDevice) {
+                        IconButton(
+                            onClick = onAddDevice,
+                            enabled = !state.isMutating,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("device_management.add"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = stringResource(R.string.device_management_add),
+                            )
+                        }
                     }
                 },
             )
@@ -214,6 +225,8 @@ fun DeviceManagementScreen(
                 onRefresh = { viewModel.onAction(DeviceManagementUiAction.Refresh) },
                 onSelectDevice = { viewModel.onAction(DeviceManagementUiAction.SelectDevice(it)) },
                 onRelease = { pendingReleaseId = it },
+                canManageDevice = canManageDevice,
+                currentUserId = currentUserId,
             )
         }
     }
@@ -228,6 +241,8 @@ private fun DeviceManagementBody(
     onRefresh: () -> Unit,
     onSelectDevice: (String) -> Unit,
     onRelease: (String) -> Unit,
+    canManageDevice: Boolean,
+    currentUserId: String,
 ) {
     when {
         state.isLoading && state.devices.isEmpty() -> ShcareLoadingState(
@@ -243,9 +258,19 @@ private fun DeviceManagementBody(
 
         state.hasLoaded && state.devices.isEmpty() -> ShcareEmptyState(
             title = stringResource(R.string.device_management_empty_title),
-            message = stringResource(R.string.device_management_empty_message),
-            actionLabel = stringResource(R.string.device_management_add),
-            onAction = onAddDevice,
+            message = stringResource(
+                if (canManageDevice) {
+                    R.string.device_management_empty_message
+                } else {
+                    R.string.device_management_empty_read_only_message
+                },
+            ),
+            actionLabel = if (canManageDevice) {
+                stringResource(R.string.device_management_add)
+            } else {
+                null
+            },
+            onAction = if (canManageDevice) onAddDevice else null,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -258,6 +283,8 @@ private fun DeviceManagementBody(
                     onSelectDevice = onSelectDevice,
                     onRelease = onRelease,
                     onConfigureWifi = onConfigureWifi,
+                    canManageDevice = canManageDevice,
+                    currentUserId = currentUserId,
                 )
             } else {
                 CompactDeviceManagementContent(
@@ -266,6 +293,8 @@ private fun DeviceManagementBody(
                     onSelectDevice = onSelectDevice,
                     onRelease = onRelease,
                     onConfigureWifi = onConfigureWifi,
+                    canManageDevice = canManageDevice,
+                    currentUserId = currentUserId,
                 )
             }
         }
@@ -317,9 +346,12 @@ private fun CompactDeviceManagementContent(
     onSelectDevice: (String) -> Unit,
     onRelease: (String) -> Unit,
     onConfigureWifi: (String) -> Unit,
+    canManageDevice: Boolean,
+    currentUserId: String,
 ) {
     val spacing = ShcareTheme.spacing
     val selectedDevice = state.selectedDevice ?: return
+    val canConfigureWifi = canManageDevice || selectedDevice.belongsTo(currentUserId)
     val now = remember(state.devices, state.isRefreshing) { Instant.now() }
     LazyColumn(
         modifier = Modifier
@@ -361,9 +393,16 @@ private fun CompactDeviceManagementContent(
                 mutationEnabled = !state.isMutating,
                 onRelease = { onRelease(selectedDevice.id) },
                 onConfigureWifi = { onConfigureWifi(selectedDevice.id) },
+                canConfigureWifi = canConfigureWifi,
+                canReleaseDevice = canManageDevice,
             )
         }
-        item { DeviceManagementInfo() }
+        item {
+            DeviceManagementInfo(
+                canManageDevice = canManageDevice,
+                canConfigureWifi = canConfigureWifi,
+            )
+        }
     }
 }
 
@@ -374,9 +413,12 @@ private fun ExpandedDeviceManagementContent(
     onSelectDevice: (String) -> Unit,
     onRelease: (String) -> Unit,
     onConfigureWifi: (String) -> Unit,
+    canManageDevice: Boolean,
+    currentUserId: String,
 ) {
     val spacing = ShcareTheme.spacing
     val selectedDevice = state.selectedDevice ?: return
+    val canConfigureWifi = canManageDevice || selectedDevice.belongsTo(currentUserId)
     val now = remember(state.devices, state.isRefreshing) { Instant.now() }
     Column(
         modifier = Modifier
@@ -408,7 +450,12 @@ private fun ExpandedDeviceManagementContent(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                item { DeviceManagementInfo() }
+                item {
+                    DeviceManagementInfo(
+                        canManageDevice = canManageDevice,
+                        canConfigureWifi = canConfigureWifi,
+                    )
+                }
             }
             LazyColumn(
                 modifier = Modifier
@@ -423,6 +470,8 @@ private fun ExpandedDeviceManagementContent(
                         mutationEnabled = !state.isMutating,
                         onRelease = { onRelease(selectedDevice.id) },
                         onConfigureWifi = { onConfigureWifi(selectedDevice.id) },
+                        canConfigureWifi = canConfigureWifi,
+                        canReleaseDevice = canManageDevice,
                     )
                 }
             }
@@ -508,6 +557,8 @@ internal fun DeviceHealthPanel(
     onRelease: () -> Unit,
     modifier: Modifier = Modifier,
     onConfigureWifi: () -> Unit = {},
+    canConfigureWifi: Boolean = true,
+    canReleaseDevice: Boolean = true,
 ) {
     val spacing = ShcareTheme.spacing
     val presenceLabel = snapshot.presence.label()
@@ -585,46 +636,52 @@ internal fun DeviceHealthPanel(
                 metrics = snapshot.telemetryMetrics(),
             )
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Button(
-                onClick = onConfigureWifi,
-                enabled = mutationEnabled,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .defaultMinSize(minHeight = 48.dp)
-                    .testTag("device_management.configure_wifi"),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Wifi,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.width(spacing.small))
-                Text(stringResource(R.string.device_management_configure_wifi))
+            if (canConfigureWifi || canReleaseDevice) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
-            OutlinedButton(
-                onClick = onRelease,
-                enabled = mutationEnabled,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .defaultMinSize(minHeight = 48.dp)
-                    .testTag("device_management.release"),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.LinkOff,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.width(spacing.small))
-                Text(
-                    text = if (isReleasing) {
-                        stringResource(R.string.device_management_releasing)
-                    } else {
-                        stringResource(R.string.device_management_release)
-                    },
-                    color = MaterialTheme.colorScheme.error,
-                )
+            if (canConfigureWifi) {
+                Button(
+                    onClick = onConfigureWifi,
+                    enabled = mutationEnabled,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("device_management.configure_wifi"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Wifi,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(spacing.small))
+                    Text(stringResource(R.string.device_management_configure_wifi))
+                }
+            }
+            if (canReleaseDevice) {
+                OutlinedButton(
+                    onClick = onRelease,
+                    enabled = mutationEnabled,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("device_management.release"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LinkOff,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(spacing.small))
+                    Text(
+                        text = if (isReleasing) {
+                            stringResource(R.string.device_management_releasing)
+                        } else {
+                            stringResource(R.string.device_management_release)
+                        },
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         }
     }
@@ -947,8 +1004,17 @@ private fun DeviceManagementInlineFailure(
 }
 
 @Composable
-private fun DeviceManagementInfo() {
-    val info = stringResource(R.string.device_management_info)
+private fun DeviceManagementInfo(
+    canManageDevice: Boolean,
+    canConfigureWifi: Boolean,
+) {
+    val info = stringResource(
+        when {
+            canManageDevice -> R.string.device_management_info
+            canConfigureWifi -> R.string.device_management_assigned_info
+            else -> R.string.device_management_read_only_info
+        },
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -971,6 +1037,12 @@ private fun DeviceManagementInfo() {
             modifier = Modifier.weight(1f),
         )
     }
+}
+
+private fun SmartDevice.belongsTo(userId: String): Boolean {
+    val normalizedUserId = userId.trim()
+    return normalizedUserId.isNotBlank() &&
+        (ownerUserId.trim() == normalizedUserId || pairedUserId?.trim() == normalizedUserId)
 }
 
 @Composable

@@ -546,6 +546,9 @@
     <string name="device_management_release_message">%1$s sẽ được gỡ khỏi tài khoản sau khi máy chủ xác nhận. Lịch sử khám và dữ liệu y tế vẫn được lưu an toàn; thiết bị vật lý không bị xóa hay thu hồi.</string>
     <string name="device_management_cancel">Hủy</string>
     <string name="device_management_info">Nhập Device ID để thêm thiết bị đã được công ty gán. Trong Kết nối Wi-Fi, Shcare phát cấu hình bằng ESPTouch V2 và xác nhận đúng thiết bị trực tuyến qua hệ thống.</string>
+    <string name="device_management_read_only_info">Bạn có thể xem trạng thái và dữ liệu kỹ thuật của thiết bị được phân công. Quản trị viên workspace quản lý Wi-Fi và liên kết thiết bị.</string>
+    <string name="device_management_assigned_info">Bạn có thể xem trạng thái và kết nối Wi-Fi cho thiết bị được phân công. Quản trị viên workspace quản lý việc thêm, gỡ hoặc chuyển thiết bị.</string>
+    <string name="device_management_empty_read_only_message">Chưa có thiết bị nào được phân công cho tài khoản này. Hãy liên hệ quản trị viên workspace.</string>
     <string name="device_management_unknown_device">Thiết bị Shcare</string>
 
     <string name="device_presence_online">Đã xác nhận online</string>

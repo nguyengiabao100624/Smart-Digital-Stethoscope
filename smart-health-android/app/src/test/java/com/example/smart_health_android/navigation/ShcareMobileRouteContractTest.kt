@@ -126,6 +126,34 @@ class ShcareMobileRouteContractTest {
     }
 
     @Test
+    fun doctorCanViewAndProvisionAssignedDeviceWithoutReceivingPairingPermission() {
+        val doctor = clinicalAuthority(capabilities = setOf("workspace.devices.view"))
+
+        listOf(
+            "device-management?deviceId=device-42",
+            "bluetooth-settings?deviceId=device-42",
+            "device-wifi/device-42",
+            "connection-success/Shcare%20One?returnRoute=dashboard",
+        ).forEach { route ->
+            assertTrue(
+                route,
+                ShcareMobileRouteContract.evaluate(route, doctor) is MobileRouteAccessDecision.Allowed,
+            )
+        }
+
+        listOf(
+            "device-pairing?returnRoute=dashboard",
+        ).forEach { route ->
+            val decision = ShcareMobileRouteContract.evaluate(route, doctor)
+            assertEquals(
+                route,
+                MobileRouteDenialReason.CapabilityMissing,
+                (decision as MobileRouteAccessDecision.Denied).reason,
+            )
+        }
+    }
+
+    @Test
     fun publicAuthRoutesOpenWithoutBackendAuthority() {
         listOf(
             "splash",

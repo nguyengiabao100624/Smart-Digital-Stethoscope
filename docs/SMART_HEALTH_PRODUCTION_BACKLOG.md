@@ -2824,3 +2824,12 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - [x] Pass local backend security/tenant gates, Admin/Web gates, Android unit/lint/assemble and ESP32 production/OTA builds.
 - [ ] Re-run authenticated production browser smoke after deployment and physical Xiaomi/COM HIL when the devices reconnect.
 - [ ] Optional workstation tooling: add `gcc/g++` to run PlatformIO's native Unity environment; do not substitute it for the already passing target firmware build or for physical HIL.
+
+## 2026-09-02 — Doctor-assigned device access deployment
+
+- [x] Correct the Android view/manage route mismatch that blocked an Admin-assigned doctor device.
+- [x] Split operational Wi-Fi provisioning from ownership administration in Android UI and backend authorization.
+- [x] Add positive assigned-owner and negative same-workspace/non-owner setup-session coverage.
+- [x] Install and instrument the corrected APK on the connected Xiaomi.
+- [ ] Push the candidate and wait for `https://shcare-api-prod.onrender.com` to report the matching release marker.
+- [ ] Run the authenticated production doctor device/Wi-Fi canary after Render is live; keep Add/release/transfer unavailable without device-manage authority.

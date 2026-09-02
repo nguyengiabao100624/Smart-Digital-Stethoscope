@@ -351,6 +351,20 @@ function writeSeedDb() {
             createdAt,
             updatedAt: createdAt,
           },
+          {
+            id: "dev_doctor_wifi",
+            name: "Assigned Doctor Wi-Fi Device",
+            type: "stethoscope",
+            status: "available",
+            organizationId: "org_alpha",
+            ownershipState: "claimed",
+            ownerUserId: "usr_doctor_alpha",
+            pairedUserId: "usr_doctor_alpha",
+            connected: false,
+            secret: "doctor-wifi-device-secret-000000000004",
+            createdAt,
+            updatedAt: createdAt,
+          },
           privateOtaDevice("dev_ota_private_valid", secrets.otaPrivateValid),
           privateOtaDevice("dev_ota_private_missing", secrets.otaPrivateMissing),
           privateOtaDevice("dev_ota_private_oversized", secrets.otaPrivateOversized),
@@ -1102,7 +1116,7 @@ test("public device projections use an allowlist and strip nested command or OTA
   );
 });
 
-test("Wi-Fi setup sessions require an assigned manageable device and never disclose its verifier", async () => {
+test("Wi-Fi setup sessions allow the assigned user without granting ownership mutations", async () => {
   const token = await loginPlatformAdmin();
   const unassigned = await requestJson("/api/v1/devices/dev_alpha/setup-session", {
     method: "POST",
@@ -1111,6 +1125,23 @@ test("Wi-Fi setup sessions require an assigned manageable device and never discl
   });
   assert.equal(unassigned.response.status, 409, JSON.stringify(unassigned.body));
   assert.equal(unassigned.body.code, "device_wifi_setup_not_assigned");
+
+  const doctorToken = await login("doctor@alpha.test");
+  const assignedDoctor = await requestJson("/api/v1/devices/dev_doctor_wifi/setup-session", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${doctorToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ supportedTransports: ["esptouch_v2"] }),
+  });
+  assert.equal(assignedDoctor.response.status, 200, JSON.stringify(assignedDoctor.body));
+  assert.equal(assignedDoctor.body.setup?.transport, "esptouch_v2");
+
+  const anotherUsersDevice = await requestJson("/api/v1/devices/dev_auth_fence/setup-session", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${doctorToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ supportedTransports: ["esptouch_v2"] }),
+  });
+  assert.equal(anotherUsersDevice.response.status, 403, JSON.stringify(anotherUsersDevice.body));
+  assert.equal(anotherUsersDevice.body.code, "device_wifi_setup_forbidden");
 
   const opened = await requestJson("/api/v1/devices/dev_auth_fence/setup-session", {
     method: "POST",

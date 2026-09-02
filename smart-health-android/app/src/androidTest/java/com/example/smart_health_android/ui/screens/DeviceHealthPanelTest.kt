@@ -5,8 +5,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.Density
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -100,5 +102,36 @@ class DeviceHealthPanelTest {
                         .contains(commandId)
                 },
             )
+    }
+
+    @Test
+    fun viewOnlyDoctorSeesDeviceHealthWithoutMutationActions() {
+        val snapshot = DeviceHealthSnapshot.from(
+            device = SmartDevice(
+                id = "doctor-assigned-device",
+                name = "Shcare phòng khám",
+                connected = true,
+                online = true,
+                lastSeenAt = "2026-07-18T11:59:30Z",
+            ),
+            now = Instant.parse("2026-07-18T12:00:00Z"),
+        )
+
+        composeRule.setContent {
+            ShcareMobileTheme {
+                DeviceHealthPanel(
+                    snapshot = snapshot,
+                    isReleasing = false,
+                    mutationEnabled = false,
+                    onRelease = {},
+                    canConfigureWifi = true,
+                    canReleaseDevice = false,
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("device_health.panel").assertExists()
+        composeRule.onNodeWithTag("device_management.configure_wifi").assertExists()
+        composeRule.onAllNodesWithTag("device_management.release").assertCountEquals(0)
     }
 }

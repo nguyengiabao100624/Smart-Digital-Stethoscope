@@ -12,6 +12,7 @@ Production access smoke: run 33646658838, job 100303009541
 Admin deploy: run 33668876125
 Portal deploy: run 33668876234
 CI: run 33668875574
+Android/device verification CI: run 33670211310
 Deployment workflow commit: 0ba4aa54
 ```
 

@@ -1,6 +1,15 @@
 # Smart Health - New Chat Context
 
-Last updated: 2026-09-02
+Last updated: 2026-09-03
+
+## 2026-09-03 exact-device access production closure
+
+- Exact-device access is live end-to-end at the cloud boundary. Platform Admin creates one-time `SHC-...` codes/QRs for one device with either `viewer` (view + Wi-Fi) or `manager` (manage that exact device). Android/Portal redeem only the opaque code; user-facing handover never requires a Device ID, device secret or factory claim artifact.
+- Supabase migration `058_device_access_invites.sql` is applied. Authenticated production smoke run `33646658838` / job `100303009541` PASS on Render release `git-c5f9cfab384f`: anonymous denial, invalid-code denial, viewer and manager create/redeem/replay, unused-invite revoke, tenant/device isolation and cleanup all succeeded without logging secrets.
+- Firebase automatic production deployment is now symmetric for both clients. Commit `0ba4aa54` deployed Admin in run `33668876125` and Portal in run `33668876234`; CI run `33668875574` PASS. Live Admin asset `_admin.devices-CfkQpc1t.js` contains the access-code/QR handover guidance, and live Portal asset `DevicePage-DIt3ny0e.js` contains the one-time access-code copy.
+- Production CORS echoes only `https://shcare-admin.web.app` and `https://shcare.web.app`; an untrusted origin receives no allow-origin header. Anonymous device-access API access returns `401`.
+- Local closure evidence is Admin contracts `209/209` plus lint/Firebase build and Portal auth/contracts plus lint/Firebase build. The debug APK is `48,687,986` bytes, SHA-256 `9DE036BF7ACB63867135FED20475BDECB7D00D7367766465E7ECC97A02ED1BE6`.
+- Overall G4 is still **PARTIAL**, not complete: ADB currently lists no Xiaomi target, so the new APK cannot be installed or visually/TalkBack-smoked; production WSS/ACK/dual-mic audio-v2/durable-scan/signed-OTA/forced-rollback still require the physical board; and the previously exposed Firebase service-account key must be replaced in Render/GitHub and revoked only after the replacement is verified.
 
 ## 2026-09-02 device access code/QR candidate checkpoint
 

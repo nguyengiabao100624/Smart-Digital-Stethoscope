@@ -1,6 +1,34 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-09-02
+Last updated: 2026-09-03
+
+## 2026-09-03 production access-code release verification
+
+Current cloud evidence:
+
+```text
+Render backend: git-c5f9cfab384f
+Production access smoke: run 33646658838, job 100303009541
+Admin deploy: run 33668876125
+Portal deploy: run 33668876234
+CI: run 33668875574
+Deployment workflow commit: 0ba4aa54
+```
+
+Verify public health and exact CORS without printing credentials:
+
+```powershell
+curl.exe -sS https://shcare-api-prod.onrender.com/api/health
+curl.exe -sS -D - -o NUL -H "Origin: https://shcare-admin.web.app" https://shcare-api-prod.onrender.com/api/health
+curl.exe -sS -D - -o NUL -H "Origin: https://shcare.web.app" https://shcare-api-prod.onrender.com/api/health
+curl.exe -sS -D - -o NUL -H "Origin: https://attacker.invalid" https://shcare-api-prod.onrender.com/api/health
+```
+
+The first two origins must be echoed exactly; the untrusted origin must have no `access-control-allow-origin`. Anonymous device-access endpoints must return `401`. The live Admin devices route must load `_admin.devices-CfkQpc1t.js`; the public device page must load `DevicePage-DIt3ny0e.js` and show the one-time access-code wording.
+
+The current debug APK is `smart-health-android/app/build/outputs/apk/debug/app-debug.apk`, `48,687,986` bytes, SHA-256 `9DE036BF7ACB63867135FED20475BDECB7D00D7367766465E7ECC97A02ED1BE6`. Install it only when `adb devices -l` reports the Xiaomi. ADB is currently empty, so do not claim installation or visual/TalkBack proof.
+
+Rotate the exposed Firebase service-account credential safely: provision the replacement in Render and GitHub, deploy and verify both Firebase targets plus provider-dependent operations, and only then revoke the old key. Never paste either key into source, shell output, logs or documentation.
 
 ## 2026-09-02 device access code/QR verification
 

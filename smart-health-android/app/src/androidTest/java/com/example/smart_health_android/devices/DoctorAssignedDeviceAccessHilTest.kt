@@ -9,6 +9,10 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.smart_health_android.MainActivity
+import com.google.android.gms.tasks.Tasks
+import com.google.firebase.auth.FirebaseAuth
+import java.io.File
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
@@ -34,6 +38,8 @@ class DoctorAssignedDeviceAccessHilTest {
             arguments.getString("shcareDoctorDeviceHil").equals("true", ignoreCase = true),
         )
 
+        restoreOneTimeFirebaseSessionIfProvided()
+
         composeRule.waitUntil(timeoutMillis = 45_000) {
             hasNode("doctor-dashboard.screen") || hasNode("login.email")
         }
@@ -42,7 +48,19 @@ class DoctorAssignedDeviceAccessHilTest {
             hasNode("login.email"),
         )
 
+        composeRule.waitUntil(timeoutMillis = 60_000) {
+            hasNode("doctor-dashboard.content") ||
+                hasNode("doctor-dashboard.state.permission") ||
+                hasNode("doctor-dashboard.state.offline") ||
+                hasNode("doctor-dashboard.state.error") ||
+                hasNode("login.email")
+        }
+        check(hasNode("doctor-dashboard.content")) {
+            "The authenticated doctor dashboard did not reach its backend-confirmed content state."
+        }
+
         composeRule.onNodeWithTag("doctor-dashboard.device")
+            .performScrollTo()
             .assertIsDisplayed()
             .performClick()
 
@@ -74,4 +92,23 @@ class DoctorAssignedDeviceAccessHilTest {
         runCatching {
             composeRule.onAllNodesWithTag(testTag).fetchSemanticsNodes().isNotEmpty()
         }.getOrDefault(false)
+
+    private fun restoreOneTimeFirebaseSessionIfProvided() {
+        val tokenFile = File(composeRule.activity.filesDir, OneTimeTokenFileName)
+        if (!tokenFile.isFile) return
+
+        val customToken = tokenFile.readText(Charsets.UTF_8).trim()
+        check(tokenFile.delete()) { "The one-time Firebase token could not be deleted before use." }
+        check(customToken.isNotBlank()) { "The one-time Firebase token file was empty." }
+        Tasks.await(
+            FirebaseAuth.getInstance().signInWithCustomToken(customToken),
+            30,
+            TimeUnit.SECONDS,
+        )
+        composeRule.activityRule.scenario.recreate()
+    }
+
+    private companion object {
+        const val OneTimeTokenFileName = "doctor-device-canary.custom-token"
+    }
 }

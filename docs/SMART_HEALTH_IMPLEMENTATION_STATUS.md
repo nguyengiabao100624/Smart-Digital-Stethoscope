@@ -3192,4 +3192,4 @@ KLTN report artifacts generated from this evidence set:
 - [x] Install APK SHA-256 `2750938E7064B305E43B5E4E36104193127DA99E2005CA9915790E9370B95E96` on Xiaomi `21081111RG`.
 - [x] Fix the Admin-allocation `unassigned`/canonical-owner mismatch discovered by the first live canary; keep a truly ownerless inventory device rejected with `409`.
 - [x] Confirm Render release `bcf42562ab7c` and pass public deployment plus the exact authenticated doctor/assigned-device ESPTouch V2 setup-session canary with HTTP `200`.
-- [ ] Repeat only the visual dashboard tap after the doctor signs in again; the test APK installation cleared the prior Firebase session and credentials were deliberately not injected through ADB.
+- [x] Pass the exact signed-in physical dashboard → assigned device → Wi-Fi surface canary `1/1`; prove Add/release are absent, delete one-use auth material, remove the test APK, and leave the normal App signed in on the doctor dashboard.

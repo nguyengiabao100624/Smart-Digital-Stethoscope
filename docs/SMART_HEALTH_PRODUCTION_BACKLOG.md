@@ -2834,4 +2834,4 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - [x] Accept a canonical responsible doctor when Admin allocation has lifecycle state `unassigned` because no patient is attached; continue rejecting ownerless inventory.
 - [x] Deploy Render release `bcf42562ab7c` and pass public health/auth/Admin/Portal rewrite smoke.
 - [x] Run the authenticated production canary for the exact assigned doctor/device: setup-session HTTP `200`, ESPTouch V2, AES-128.
-- [ ] Repeat the signed-in visual dashboard tap after login; the instrumentation installation cleared the prior Firebase session and no credential was injected through ADB. Add/release/transfer remain unavailable without device-manage authority by contract and on-device UI tests.
+- [x] Pass the signed-in Xiaomi dashboard → assigned device → Wi-Fi surface canary `1/1`; Add/release remain absent without device-manage authority. One-use auth material was deleted before exchange, the test APK was removed and the normal App remains signed in.

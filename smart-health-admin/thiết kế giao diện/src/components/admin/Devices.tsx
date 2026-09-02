@@ -1351,11 +1351,11 @@ export function Devices() {
                     Cấu hình Wi‑Fi cho thiết bị
                   </div>
                   <p className="text-sm leading-6 text-muted-foreground">
-                    Sau khi Admin phân công trực tiếp, người dùng chỉ nhập Device ID trong App rồi
-                    dùng màn Kết nối Wi‑Fi để phát cấu hình ESPTouch V2 Broadcast. Claim code chỉ
-                    dùng khi bàn giao một thiết bị còn ở kho workspace qua Portal; mã không chứa
-                    device secret hoặc mật khẩu Wi‑Fi. SoftAP chỉ là phương án khôi phục vật lý có
-                    thời hạn, không thuộc luồng chính trên App.
+                    Admin tạo mã/QR truy cập cho đúng thiết bị và chọn phạm vi quyền. Mã “Xem & kết
+                    nối Wi-Fi” cho phép mở thông tin và cấu hình ESPTouch V2 Broadcast; mã “Quản lý
+                    thiết bị” bổ sung các thao tác quản trị trên đúng thiết bị đó. Người dùng không
+                    nhập Device ID, device secret hoặc mật khẩu Wi-Fi ở màn bàn giao. SoftAP chỉ là
+                    phương án khôi phục vật lý có thời hạn, không thuộc luồng chính.
                   </p>
                 </div>
 

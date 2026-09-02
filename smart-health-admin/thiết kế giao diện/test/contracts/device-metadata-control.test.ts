@@ -46,7 +46,8 @@ test("Platform Admin can edit metadata and atomically assign workspace, owner, a
   assert.match(assignmentDialog, /organizationId: workspaceId/);
   assert.match(assignmentDialog, /smartHealthApi\.assignDevice/);
   assert.match(assignmentDialog, /smartHealthApi\.assignDevicePatient/);
-  assert.match(assignmentDialog, /Claim code chỉ dùng một lần/);
+  assert.match(assignmentDialog, /Tạo mã\/QR truy cập/);
+  assert.match(assignmentDialog, /Mỗi mã chỉ dùng một lần/);
   assert.match(backend, /DEVICE_ASSIGNMENT_PLATFORM_ADMIN_REQUIRED/);
   assert.match(backend, /operation: "allocate"/);
   assert.match(backend, /device\.assignment\.update/);

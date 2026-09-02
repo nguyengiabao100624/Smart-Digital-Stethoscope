@@ -500,12 +500,13 @@ export function AssignDevicePatientDialog({
                     {allocationMode === "patient"
                       ? "Thiết bị sẽ được gán cho bệnh nhân trong workspace đã chọn."
                       : allocationMode === "account"
-                        ? "Tài khoản được chọn có thể mở thiết bị bằng Device ID trong App."
+                        ? "Tài khoản được chọn sẽ nhận quyền nền; Admin vẫn tạo mã/QR để bàn giao an toàn trong App."
                         : "Thiết bị chỉ nằm trong kho workspace và chưa thuộc tài khoản nào."}
                   </p>
                   <p className="mt-1 text-muted-foreground">
-                    Claim code chỉ dùng một lần khi bàn giao thiết bị chưa được phân công. Thiết bị
-                    đã được Admin cấp trực tiếp cho tài khoản thì App chỉ cần Device ID.
+                    Người dùng không cần biết Device ID. Sau khi lưu phân công, mở thiết bị và chọn
+                    “Tạo mã/QR truy cập”, rồi cấp mã “Xem & kết nối Wi-Fi” hoặc “Quản lý thiết bị”
+                    đúng nhu cầu. Mỗi mã chỉ dùng một lần và chỉ áp dụng cho thiết bị này.
                   </p>
                 </div>
               </div>

@@ -7,6 +7,10 @@ const dialogPath = new URL(
   import.meta.url,
 );
 const devicesPath = new URL("../../src/components/admin/Devices.tsx", import.meta.url);
+const assignmentDialogPath = new URL(
+  "../../src/components/admin/dialogs/AssignDevicePatientDialog.tsx",
+  import.meta.url,
+);
 const apiPath = new URL("../../src/lib/smart-health-api.ts", import.meta.url);
 
 test("Platform Admin creates one-time viewer or manager access without widening platform authority", async () => {
@@ -60,4 +64,18 @@ test("access-code dialog preserves keyboard, reduced-motion and minimum target c
   assert.match(dialog, /min-h-11|min-h-12/);
   assert.match(dialog, /motion-reduce:/);
   assert.match(dialog, /focus-visible:ring-2/);
+});
+
+test("all Admin handover guidance uses one-time access codes instead of raw Device IDs", async () => {
+  const [devices, assignmentDialog] = await Promise.all([
+    readFile(devicesPath, "utf8"),
+    readFile(assignmentDialogPath, "utf8"),
+  ]);
+
+  assert.match(devices, /Người[\s\S]{0,80}dùng không nhập Device ID/);
+  assert.match(assignmentDialog, /Tạo mã\/QR truy cập/);
+  assert.match(assignmentDialog, /Người dùng không cần biết Device ID/);
+  assert.doesNotMatch(devices, /người dùng chỉ nhập Device ID trong App/i);
+  assert.doesNotMatch(assignmentDialog, /App chỉ cần Device ID/i);
+  assert.doesNotMatch(assignmentDialog, /mở thiết bị bằng Device ID trong App/i);
 });

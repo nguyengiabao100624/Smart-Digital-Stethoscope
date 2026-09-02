@@ -329,12 +329,12 @@ export function AddDeviceDialog({
                             ? "Đã hết hạn"
                             : artifactStatus === "expiring"
                               ? "Sắp hết hạn"
-                              : "Sẵn sàng bàn giao"}
+                              : "Chỉ dùng nội bộ factory"}
                         </span>
                       </div>
                       <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                        Đây là artifact một lần. Tải QR hoặc bàn giao trực tiếp trước khi sửa biểu
-                        mẫu hay đóng hộp thoại.
+                        Đây là artifact factory một lần để xác minh và nạp thiết bị. Không gửi
+                        Device ID, claim code hoặc QR này cho bác sĩ, bệnh nhân hay người dùng App.
                       </p>
                     </div>
 
@@ -415,10 +415,10 @@ export function AddDeviceDialog({
                       <div className="flex items-start gap-2">
                         <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                         <p>
-                          Admin tạo mã tại đây sau khi nhập đúng Device ID đã nạp tại factory. Bàn
-                          giao Device ID và claim code cho bác sĩ; bác sĩ nhập hai giá trị đó trong
-                          Portal. Sau khi claim thành công, cấu hình Wi‑Fi được thực hiện trong App
-                          theo luồng SmartConfig/ESPTouch, không cần mở IP hoặc Wi‑Fi tạm.
+                          Sau khi hoàn tất bước factory, đóng hộp thoại và mở đúng thiết bị trong
+                          danh sách, rồi chọn “Tạo mã/QR truy cập”. Chỉ mã SHC/QR đó mới được bàn
+                          giao cho người dùng; App và Portal không yêu cầu Device ID hay claim code
+                          factory. Cấu hình Wi‑Fi tiếp tục dùng ESPTouch V2 Broadcast trong App.
                         </p>
                       </div>
                     </div>
@@ -612,8 +612,9 @@ export function AddDeviceDialog({
               <div className="flex items-start gap-3">
                 <Wifi className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary" />
                 <p className="text-sm text-muted-foreground">
-                  QR claim chứa Device ID và one-time claim code theo workspace. QR không chứa
-                  device secret hoặc mật khẩu Wi‑Fi; mã hết hạn/đã dùng phải được Admin cấp lại.
+                  QR factory này chứa Device ID và claim code nội bộ, không chứa device secret hay
+                  mật khẩu Wi‑Fi. Không dùng QR này để cấp quyền người dùng; hãy tạo mã/QR truy cập
+                  SHC từ dòng thiết bị sau khi hoàn tất.
                 </p>
               </div>
             </div>

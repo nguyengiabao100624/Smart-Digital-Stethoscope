@@ -10,7 +10,7 @@ import { useSEO } from "@/lib/useSEO";
 
 const specs = [
   { label: "Kết nối sản phẩm", value: "Wi-Fi + WSS đã xác thực" },
-  { label: "Ghép thiết bị", value: "QR hoặc mã claim dùng một lần" },
+  { label: "Thêm thiết bị", value: "QR hoặc mã truy cập dùng một lần" },
   { label: "Âm thanh", value: "PCM16 little-endian, mono, 16 kHz" },
   { label: "Gói tương thích", value: "128 mẫu mỗi gói" },
   {

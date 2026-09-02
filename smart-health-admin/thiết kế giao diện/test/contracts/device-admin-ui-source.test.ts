@@ -206,6 +206,10 @@ test("keeps the one-time claim code inside the dialog instead of a persistent to
 
   assert.match(addDeviceSource, /Claim code:\s*\{provisionArtifact\.claimCode\}/);
   assert.doesNotMatch(addDeviceSource, /description:\s*`Claim code:/);
+  assert.match(addDeviceSource, /Chỉ dùng nội bộ factory/);
+  assert.match(addDeviceSource, /Tạo mã\/QR truy cập/);
+  assert.match(addDeviceSource, /App và Portal không yêu cầu Device ID/);
+  assert.doesNotMatch(addDeviceSource, /Bàn\s+giao Device ID và claim code cho bác sĩ/);
 });
 
 test("renders one complete canonical provisioning artifact and clears stale artifacts", async () => {
@@ -247,7 +251,8 @@ test("keeps the primary Wi-Fi flow on ESPTouch and does not invent a setup SSID"
   assert.doesNotMatch(devicesSource, /deviceSuffix\(selectedDevice\)/);
   assert.doesNotMatch(devicesSource, /SmartHealth-\{/);
   assert.match(devicesSource, /ESPTouch V2 Broadcast/);
-  assert.match(devicesSource, /Claim code chỉ[\s\S]{0,80}dùng khi bàn giao/);
+  assert.match(devicesSource, /Tạo mã\/QR truy cập/);
+  assert.match(devicesSource, /Xem &[\s\S]{0,80}kết nối Wi-Fi/);
   assert.match(devicesSource, /SoftAP chỉ là phương án khôi phục vật lý/);
   assert.doesNotMatch(devicesSource, /http:\/\/192\.168\.4\.1/);
 });

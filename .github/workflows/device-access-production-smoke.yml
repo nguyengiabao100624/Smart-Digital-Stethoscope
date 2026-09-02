@@ -1,0 +1,56 @@
+name: Device Access Production Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      device_id:
+        description: Factory-enrolled device used by the controlled production canary
+        required: true
+        default: shcare-g3-prod-demo
+
+concurrency:
+  group: device-access-production-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Create, redeem, verify, and revoke exact-device grants
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FIREBASE_AUTH_ENABLED: "true"
+      FIREBASE_PROJECT_ID: smart-health-stethoscope
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+      FIREBASE_WEB_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+      SMOKE_BACKEND_URL: https://shcare-api-prod.onrender.com
+      SMOKE_DEVICE_ID: ${{ inputs.device_id }}
+      SMOKE_PLATFORM_EMAIL: ${{ secrets.SMOKE_PLATFORM_EMAIL }}
+      SMOKE_RECIPIENT_EMAIL: ${{ secrets.SMOKE_RECIPIENT_EMAIL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: smart-health-embedded/web-monitor/package-lock.json
+
+      - name: Validate smoke secrets
+        shell: bash
+        run: |
+          for name in FIREBASE_SERVICE_ACCOUNT_JSON FIREBASE_WEB_API_KEY SMOKE_PLATFORM_EMAIL SMOKE_RECIPIENT_EMAIL; do
+            test -n "${!name}" || {
+              echo "::error::Missing GitHub Actions secret for $name"
+              exit 1
+            }
+          done
+
+      - name: Install backend dependencies
+        working-directory: smart-health-embedded/web-monitor
+        run: npm ci
+
+      - name: Run exact-device production smoke
+        working-directory: smart-health-embedded/web-monitor
+        run: node scripts/deviceAccessProductionSmokeTest.js

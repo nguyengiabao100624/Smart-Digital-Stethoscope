@@ -3,6 +3,7 @@ package com.example.smart_health_android.patientdashboard
 import com.example.smart_health_android.navigation.MobileExperience
 import com.example.smart_health_android.navigation.MobileRouteAccessContext
 import com.example.smart_health_android.navigation.MobileRouteAccessDecision
+import com.example.smart_health_android.navigation.MobileRouteCapabilities
 import com.example.smart_health_android.navigation.ShcareMobileRoute
 import com.example.smart_health_android.navigation.ShcareMobileRouteContract
 import java.util.Collections
@@ -116,7 +117,7 @@ fun bindPatientDashboardRouteAccess(
         features = PatientDashboardFeatureAccess(
             canStartScan = canOpen(ShcareMobileRoute.NewScan),
             canViewRecords = canOpen(ShcareMobileRoute.Records),
-            canManageDevice = canOpen(ShcareMobileRoute.DeviceManagement),
+            canManageDevice = context.capabilities.any(MobileRouteCapabilities.DeviceManage::contains),
             canViewAppointments = canOpen(ShcareMobileRoute.Appointments),
             canUseAssistant = false,
         ),

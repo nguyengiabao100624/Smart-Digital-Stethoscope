@@ -60,13 +60,13 @@ data class SettingsAuthoritySnapshot private constructor(
 
 data class SettingsFeatureAccess(
     val canManageFamilyProfiles: Boolean = false,
-    val canManageStethoscope: Boolean = false,
+    val canAccessStethoscope: Boolean = false,
     val canViewAiCalibration: Boolean = false,
     val canViewDataStorage: Boolean = false,
 ) {
     val anyAvailable: Boolean
         get() = canManageFamilyProfiles ||
-            canManageStethoscope ||
+            canAccessStethoscope ||
             canViewAiCalibration ||
             canViewDataStorage
 }
@@ -111,7 +111,7 @@ fun bindSettingsRouteAccess(
         ),
         features = SettingsFeatureAccess(
             canManageFamilyProfiles = canOpen(ShcareMobileRoute.FamilyProfiles),
-            canManageStethoscope = canOpen(ShcareMobileRoute.StethoscopeSettings),
+            canAccessStethoscope = canOpen(ShcareMobileRoute.StethoscopeSettings),
             canViewAiCalibration = canOpen(ShcareMobileRoute.AiCalibration),
             canViewDataStorage = canOpen(ShcareMobileRoute.DataStorage),
         ),

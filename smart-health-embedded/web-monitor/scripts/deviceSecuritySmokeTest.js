@@ -1118,6 +1118,132 @@ test("public device projections use an allowlist and strip nested command or OTA
   );
 });
 
+test("Platform Admin access codes grant exact viewer or manager authority without exposing device identity in QR", async () => {
+  const platformToken = await loginPlatformAdmin();
+  const doctorToken = await login("doctor@alpha.test");
+  const betaToken = await login("admin@beta.test");
+  const multiToken = await login("admin@multi.test");
+  const createHeaders = {
+    Authorization: `Bearer ${platformToken}`,
+    "Content-Type": "application/json",
+    "Idempotency-Key": "device-access-viewer-dev-alpha",
+  };
+  const created = await requestJson("/api/v1/devices/dev_alpha/access-invites", {
+    method: "POST",
+    headers: createHeaders,
+    body: JSON.stringify({ accessLevel: "viewer", expiresInHours: 24 }),
+  });
+  assert.equal(created.response.status, 201, JSON.stringify(created.body));
+  assert.equal(created.body.invite?.accessLevel, "viewer");
+  assert.match(created.body.code || "", /^SHC-[A-HJ-NP-Z2-9]{4}(?:-[A-HJ-NP-Z2-9]{4}){3}$/);
+  assert.match(created.body.qrPayload || "", /^shcare:\/\/device-access\?v=1&code=SHC-/);
+  assert.doesNotMatch(created.body.qrPayload, /dev_alpha|org_alpha|secret/i);
+  assert.doesNotMatch(JSON.stringify(created.body.invite), /codeHash|code_hash/i);
+
+  const replay = await requestJson("/api/v1/devices/dev_alpha/access-invites", {
+    method: "POST",
+    headers: createHeaders,
+    body: JSON.stringify({ accessLevel: "viewer", expiresInHours: 24 }),
+  });
+  assert.equal(replay.response.status, 200, JSON.stringify(replay.body));
+  assert.equal(replay.body.idempotent, true);
+  assert.equal(replay.body.code, created.body.code);
+
+  const crossWorkspace = await requestJson("/api/v1/devices/access/redeem", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${betaToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ code: created.body.code }),
+  });
+  assert.equal(crossWorkspace.response.status, 403, JSON.stringify(crossWorkspace.body));
+  assert.equal(crossWorkspace.body.code, "device_access_workspace_forbidden");
+
+  const viewer = await requestJson("/api/v1/devices/access/redeem", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${doctorToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ code: created.body.code.toLowerCase().replaceAll("-", " ") }),
+  });
+  assert.equal(viewer.response.status, 200, JSON.stringify(viewer.body));
+  assert.equal(viewer.body.device?.id, "dev_alpha");
+  assert.equal(viewer.body.device?.accessLevel, "viewer");
+  assert.equal(viewer.body.grant?.accessLevel, "viewer");
+
+  const reusedByAnotherActor = await requestJson("/api/v1/devices/access/redeem", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${multiToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ code: created.body.code }),
+  });
+  assert.equal(reusedByAnotherActor.response.status, 409, JSON.stringify(reusedByAnotherActor.body));
+  assert.equal(reusedByAnotherActor.body.code, "device_access_code_already_used");
+
+  const viewerWifi = await requestJson("/api/v1/devices/dev_alpha/setup-session", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${doctorToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ supportedTransports: ["esptouch_v2"] }),
+  });
+  assert.equal(viewerWifi.response.status, 200, JSON.stringify(viewerWifi.body));
+
+  const viewerEdit = await requestJson("/api/v1/devices/dev_alpha", {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${doctorToken}`, "Content-Type": "application/json", "Idempotency-Key": "viewer-edit-denied" },
+    body: JSON.stringify({ name: "Viewer must not edit" }),
+  });
+  assert.equal(viewerEdit.response.status, 403, JSON.stringify(viewerEdit.body));
+
+  const managerCreated = await requestJson("/api/v1/devices/dev_alpha/access-invites", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${platformToken}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "device-access-manager-dev-alpha",
+    },
+    body: JSON.stringify({ accessLevel: "manager", expiresInHours: 1 }),
+  });
+  assert.equal(managerCreated.response.status, 201, JSON.stringify(managerCreated.body));
+  const manager = await requestJson("/api/v1/devices/access/redeem", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${doctorToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ code: managerCreated.body.code }),
+  });
+  assert.equal(manager.response.status, 200, JSON.stringify(manager.body));
+  assert.equal(manager.body.grant?.accessLevel, "manager");
+
+  const managerEdit = await requestJson("/api/v1/devices/dev_alpha", {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${doctorToken}`, "Content-Type": "application/json", "Idempotency-Key": "manager-edit-allowed" },
+    body: JSON.stringify({ name: "Alpha Device" }),
+  });
+  assert.equal(managerEdit.response.status, 200, JSON.stringify(managerEdit.body));
+
+  const listed = await requestJson("/api/v1/devices/dev_alpha/access-invites", {
+    headers: { Authorization: `Bearer ${platformToken}` },
+  });
+  assert.equal(listed.response.status, 200, JSON.stringify(listed.body));
+  assert.ok(listed.body.invites?.length >= 2);
+  assert.ok(listed.body.grants?.some((grant) => grant.userId === "usr_doctor_alpha" && grant.accessLevel === "manager"));
+  assert.doesNotMatch(JSON.stringify(listed.body), /codeHash|code_hash|SHC-/i);
+
+  const activeGrant = listed.body.grants.find(
+    (grant) => grant.userId === "usr_doctor_alpha" && grant.accessLevel === "manager" && grant.status === "active",
+  );
+  assert.ok(activeGrant?.id);
+  const revokedGrant = await requestJson(
+    `/api/v1/devices/dev_alpha/access-grants/${encodeURIComponent(activeGrant.id)}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${platformToken}`, "Idempotency-Key": "revoke-device-access-manager" },
+    },
+  );
+  assert.equal(revokedGrant.response.status, 200, JSON.stringify(revokedGrant.body));
+  assert.equal(revokedGrant.body.grant?.status, "revoked");
+
+  const editAfterRevoke = await requestJson("/api/v1/devices/dev_alpha", {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${doctorToken}`, "Content-Type": "application/json", "Idempotency-Key": "manager-edit-after-revoke" },
+    body: JSON.stringify({ name: "Must remain unchanged after revoke" }),
+  });
+  assert.equal(editAfterRevoke.response.status, 403, JSON.stringify(editAfterRevoke.body));
+});
+
 test("Wi-Fi setup sessions allow the assigned user without granting ownership mutations", async () => {
   const token = await loginPlatformAdmin();
   const unassigned = await requestJson("/api/v1/devices/dev_alpha/setup-session", {

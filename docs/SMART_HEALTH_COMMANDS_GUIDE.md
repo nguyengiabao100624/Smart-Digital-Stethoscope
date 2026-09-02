@@ -1,6 +1,44 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-08-31
+Last updated: 2026-09-02
+
+## 2026-09-02 device access code/QR verification
+
+User-facing contract:
+
+```text
+Platform Admin -> exact device -> viewer or manager -> one-time SHC code/QR
+Android/Portal -> enter or scan code -> backend exact receipt -> device settings
+viewer: view + configure Wi-Fi
+manager: manage that exact device
+```
+
+The QR is `shcare://device-access?v=1&code=...` and must not contain a Device ID, workspace ID, device secret, credential or token. Factory provisioning/claim endpoints are compatibility-only and must not be linked from user-facing Android/Portal routes.
+
+Local gates:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm run check
+npm run smoke:device-access
+node --test --test-concurrency=1 scripts/deviceOtaLifecycleTest.js scripts/deviceOtaRepositoryTest.js scripts/deviceSecuritySmokeTest.js
+
+cd "D:\Study\KLTN\smart-health-admin\thiết kế giao diện"
+npm run lint
+npm run test:contracts
+npm run build:firebase
+
+cd D:\Study\KLTN\smart-health-web
+npm run lint
+npm run test:auth
+npm run test:contracts
+npm run build
+
+cd D:\Study\KLTN\smart-health-android
+.\gradlew.bat testDebugUnitTest lintDebug assembleDebug --console=plain
+```
+
+Run the backend WSS/OTA aggregate serially as shown. Parallel heavy web/Gradle builds can starve its short test timers and create non-product timeout noise. Production proof still requires exact Render marker/migration, authenticated create/redeem/revoke cleanup, live Firebase assets and the installed Xiaomi APK; local PASS is not LIVE proof.
 
 ## 2026-08-31 replacement Render backend and login verification
 

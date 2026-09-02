@@ -46,6 +46,7 @@
     "smoke:settings-persistence": "node --test scripts/settingsPersistenceContractTest.js scripts/configurationPersistenceTest.js",
     "smoke:auth-hot-path": "node --test scripts/authHotPathPersistenceContractTest.js",
     "smoke:device-hot-path": "node --test scripts/deviceHotPathPersistenceContractTest.js",
+    "smoke:device-access": "node --test scripts/deviceAccessContractTest.js scripts/deviceAccessRepositoryTest.js",
     "smoke:device-setup-security": "node --test scripts/deviceSetupSecurityTest.js",
     "hil:device:start": "node scripts/startDeviceHil.mjs",
     "hil:device:smoke": "node scripts/runDeviceHilSmoke.mjs",

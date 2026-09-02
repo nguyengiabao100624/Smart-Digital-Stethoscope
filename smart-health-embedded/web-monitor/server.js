@@ -194,6 +194,13 @@ const {
   buildSmartConfigV2Material,
 } = require("./src/deviceSmartConfigSecurity");
 const {
+  buildDeviceAccessQrPayload,
+  deriveDeviceAccessCode,
+  hashDeviceAccessCode,
+  normalizeDeviceAccessCode,
+  normalizeDeviceAccessLevel,
+} = require("./src/deviceAccessContract");
+const {
   STAFF_INVITATION_STATUSES,
   assertStaffInvitationToken,
   generateStaffInvitationToken,
@@ -5574,6 +5581,32 @@ function publicDevices(devices) {
   return devices.map(publicDevice);
 }
 
+function getDeviceAccessGrant(user, device) {
+  if (!user?.id || !device?.id || !repositories?.deviceAccess) return null;
+  const grant = repositories.deviceAccess.findActiveGrant(user.id, device.id);
+  if (!grant || grant.organizationId !== getDeviceWorkspaceId(device)) return null;
+  const operationalMembership = getUserMemberships(user).some(
+    (membership) =>
+      membership.workspaceId === grant.organizationId && membership.operational === true,
+  );
+  return operationalMembership ? grant : null;
+}
+
+function publicDeviceForUser(user, device) {
+  const safeDevice = publicDevice(device);
+  if (!safeDevice) return null;
+  const grant = getDeviceAccessGrant(user, device);
+  if (grant) {
+    safeDevice.accessLevel = grant.accessLevel;
+    safeDevice.accessGrantId = grant.id;
+  }
+  return safeDevice;
+}
+
+function publicDevicesForUser(user, devices) {
+  return devices.map((device) => publicDeviceForUser(user, device));
+}
+
 function normalizeDevicePairingMethod(value, hasClaimCode = false) {
   const normalized = readString(value, 60).trim().toLowerCase();
   if (!normalized) return hasClaimCode ? "QR" : "Manual";
@@ -7097,6 +7130,9 @@ function canAccessDevice(user, device) {
   if (isPlatformAdminUser(user)) {
     return true;
   }
+  if (getDeviceAccessGrant(user, device)) {
+    return true;
+  }
   const deviceWorkspaceId = getDeviceWorkspaceId(device);
   const isPersonalOwner = Boolean(
     isPatientUser(user) &&
@@ -7133,6 +7169,9 @@ function canManageDevice(user, device) {
   if (isPlatformAdminUser(user)) {
     return true;
   }
+  if (getDeviceAccessGrant(user, device)?.accessLevel === "manager") {
+    return true;
+  }
   const deviceWorkspaceId = getDeviceWorkspaceId(device);
   const isPersonalOwner = Boolean(
     isPatientUser(user) &&
@@ -7162,6 +7201,9 @@ function canProvisionAssignedDeviceWifi(user, device) {
     return false;
   }
   if (canManageDevice(user, device)) {
+    return true;
+  }
+  if (getDeviceAccessGrant(user, device)) {
     return true;
   }
   const userId = readString(user.id, 120);
@@ -20033,7 +20075,7 @@ async function handleDevicesApi(req, res, url, segments) {
       defaultSort: "lastSeenAt:desc",
     });
     setWorkspacePaginationHeaders(res, pageResult);
-    sendJson(res, 200, { devices: publicDevices(pageResult.items), summary: deviceSummary });
+    sendJson(res, 200, { devices: publicDevicesForUser(user, pageResult.items), summary: deviceSummary });
     return;
   }
 
@@ -20043,7 +20085,68 @@ async function handleDevicesApi(req, res, url, segments) {
     }
     refreshDevicePresence();
     sendJson(res, 200, {
-      devices: publicDevices(filterDevicesForUser(user, db.devices).filter((device) => device.status === "available" || device.connected)),
+      devices: publicDevicesForUser(user, filterDevicesForUser(user, db.devices).filter((device) => device.status === "available" || device.connected)),
+    });
+    return;
+  }
+
+  if (segments.length === 4 && segments[2] === "access" && segments[3] === "redeem" && method === "POST") {
+    if (!isActiveUserAccount(user)) {
+      throw httpError(403, "Tài khoản phải đang hoạt động để nhận quyền thiết bị", "DEVICE_ACCESS_ACCOUNT_INACTIVE");
+    }
+    if (!repositories?.deviceAccess) {
+      throw httpError(503, "Kho quyền truy cập thiết bị chưa sẵn sàng", "DEVICE_ACCESS_STORAGE_UNAVAILABLE");
+    }
+    const payload = await readJsonBody(req);
+    const forbiddenField = Object.keys(payload).find(
+      (field) => !["code", "idempotencyKey"].includes(field),
+    );
+    if (forbiddenField) {
+      throw httpError(400, `Field ${forbiddenField} is not accepted for access-code redemption`, "DEVICE_ACCESS_FIELD_FORBIDDEN");
+    }
+    const code = normalizeDeviceAccessCode(payload.code);
+    if (!code) {
+      throw httpError(400, "Mã truy cập thiết bị không hợp lệ", "DEVICE_ACCESS_CODE_INVALID");
+    }
+    const allowedOrganizationIds = isPlatformAdminUser(user)
+      ? db.organizations.map((organization) => organization.id)
+      : getUserMemberships(user)
+          .filter((membership) => membership.operational === true)
+          .map((membership) => membership.workspaceId);
+    if (allowedOrganizationIds.length === 0) {
+      throw httpError(403, "Tài khoản chưa thuộc workspace đang hoạt động", "WORKSPACE_MEMBERSHIP_REQUIRED");
+    }
+    const context = getRequestContext(req) || createRequestContext(req);
+    const result = await repositories.deviceAccess.redeem({
+      codeHash: hashDeviceAccessCode(code),
+      userId: user.id,
+      allowedOrganizationIds,
+      at: nowIso(),
+      audit: {
+        action: "device.access.redeem",
+        actorUserId: user.id,
+        resourceType: "device_access_grant",
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
+      },
+    });
+    const device = repositories
+      ? await repositories.devices.findById(result.grant.deviceId)
+      : db.devices.find((candidate) => candidate.id === result.grant.deviceId);
+    if (!device || device.status === "revoked" || device.revokedAt) {
+      throw httpError(410, "Thiết bị không còn khả dụng", "DEVICE_ACCESS_DEVICE_UNAVAILABLE");
+    }
+    addAccessLog(`Nhận quyền ${result.grant.accessLevel} cho thiết bị ${device.name}`, {
+      userId: user.id,
+      organizationId: device.organizationId,
+      ip: context.ip || "",
+      severity: "success",
+    });
+    await saveDb();
+    sendJson(res, 200, {
+      device: publicDeviceForUser(user, device),
+      grant: result.grant,
+      idempotent: Boolean(result.replayed),
     });
     return;
   }
@@ -20580,6 +20683,172 @@ async function handleDevicesApi(req, res, url, segments) {
     throw httpError(404, "Không tìm thấy thiết bị");
   }
 
+  if (segments.length === 4 && segments[3] === "access-invites" && method === "GET") {
+    if (!isPlatformAdminUser(user)) {
+      throw httpError(403, "Chỉ Platform Admin được xem mã truy cập thiết bị", "DEVICE_ACCESS_PLATFORM_ADMIN_REQUIRED");
+    }
+    sendJson(res, 200, {
+      invites: await repositories.deviceAccess.listInvites(device.id),
+      grants: await repositories.deviceAccess.listGrants(device.id),
+    });
+    return;
+  }
+
+  if (segments.length === 4 && segments[3] === "access-invites" && method === "POST") {
+    if (!isPlatformAdminUser(user)) {
+      throw httpError(403, "Chỉ Platform Admin được tạo mã truy cập thiết bị", "DEVICE_ACCESS_PLATFORM_ADMIN_REQUIRED");
+    }
+    if (!repositories?.deviceAccess) {
+      throw httpError(503, "Kho quyền truy cập thiết bị chưa sẵn sàng", "DEVICE_ACCESS_STORAGE_UNAVAILABLE");
+    }
+    if (device.status === "revoked" || device.revokedAt) {
+      throw httpError(409, "Không thể tạo mã cho thiết bị đã thu hồi", "DEVICE_ACCESS_DEVICE_REVOKED");
+    }
+    if (!device.organizationId) {
+      throw httpError(409, "Thiết bị phải thuộc một workspace trước khi tạo mã", "DEVICE_ACCESS_WORKSPACE_REQUIRED");
+    }
+    if (!device.secretHash && device.secret) {
+      device.secretHash = canonicalDeviceSecretHash(device.secret);
+      delete device.secret;
+    }
+    if (!device.secretHash) {
+      throw httpError(503, "Thiết bị thiếu vật liệu xác minh factory", "DEVICE_ACCESS_MATERIAL_UNAVAILABLE");
+    }
+    const payload = await readJsonBody(req);
+    const forbiddenField = Object.keys(payload).find(
+      (field) => !["accessLevel", "expiresInHours", "idempotencyKey"].includes(field),
+    );
+    if (forbiddenField) {
+      throw httpError(400, `Field ${forbiddenField} is not accepted for access-code creation`, "DEVICE_ACCESS_FIELD_FORBIDDEN");
+    }
+    const accessLevel = normalizeDeviceAccessLevel(payload.accessLevel);
+    const expiresInHours = Number(payload.expiresInHours ?? 24);
+    if (!Number.isInteger(expiresInHours) || expiresInHours < 1 || expiresInHours > 168) {
+      throw httpError(400, "Thời hạn mã phải từ 1 đến 168 giờ", "DEVICE_ACCESS_EXPIRY_INVALID");
+    }
+    const idempotencyKey = getIdempotencyKey(req, payload);
+    if (!idempotencyKey) {
+      throw httpError(400, "Idempotency-Key is required", "IDEMPOTENCY_KEY_REQUIRED");
+    }
+    const fingerprint = createIdempotencyFingerprint({
+      deviceId: device.id,
+      organizationId: device.organizationId,
+      accessLevel,
+      expiresInHours,
+    });
+    const existingIntent = await repositories.deviceAccess.findInviteByIntent(user.id, idempotencyKey);
+    if (
+      existingIntent &&
+      (existingIntent.deviceId !== device.id ||
+        existingIntent.organizationId !== device.organizationId ||
+        existingIntent.accessLevel !== accessLevel ||
+        existingIntent.requestFingerprint !== fingerprint)
+    ) {
+      throw httpError(409, "Idempotency-Key đã được dùng cho yêu cầu khác", "IDEMPOTENCY_KEY_REUSED");
+    }
+    const createdAt = existingIntent?.createdAt || nowIso();
+    const expiresAt = existingIntent?.expiresAt ||
+      new Date(Date.parse(createdAt) + expiresInHours * 60 * 60 * 1000).toISOString();
+    const code = deriveDeviceAccessCode({
+      deviceId: device.id,
+      organizationId: device.organizationId,
+      accessLevel,
+      expiresAt,
+      secretMaterial: device.secretHash,
+      idempotencyKey,
+      fingerprint,
+    });
+    const context = getRequestContext(req) || createRequestContext(req);
+    const result = await repositories.deviceAccess.createInvite({
+      invite: {
+        id: createId("dai"),
+        deviceId: device.id,
+        organizationId: device.organizationId,
+        accessLevel,
+        codeHash: hashDeviceAccessCode(code),
+        createdByUserId: user.id,
+        idempotencyKey,
+        requestFingerprint: fingerprint,
+        expiresAt,
+        createdAt,
+        updatedAt: createdAt,
+      },
+      audit: {
+        action: "device.access.invite.create",
+        actorUserId: user.id,
+        organizationId: device.organizationId,
+        resourceType: "device_access_invite",
+        resourceId: device.id,
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
+        metadata: { deviceId: device.id, accessLevel, expiresAt },
+      },
+    });
+    sendJson(res, result.replayed ? 200 : 201, {
+      invite: result.invite,
+      code,
+      qrPayload: buildDeviceAccessQrPayload(code),
+      idempotent: Boolean(result.replayed),
+    });
+    return;
+  }
+
+  if (segments.length === 5 && segments[3] === "access-invites" && method === "DELETE") {
+    if (!isPlatformAdminUser(user)) {
+      throw httpError(403, "Chỉ Platform Admin được thu hồi mã truy cập thiết bị", "DEVICE_ACCESS_PLATFORM_ADMIN_REQUIRED");
+    }
+    const inviteId = decodeURIComponent(segments[4]);
+    const context = getRequestContext(req) || createRequestContext(req);
+    const invite = await repositories.deviceAccess.revokeInvite({
+      inviteId,
+      deviceId: device.id,
+      actorUserId: user.id,
+      at: nowIso(),
+      audit: {
+        action: "device.access.invite.revoke",
+        actorUserId: user.id,
+        organizationId: device.organizationId || "",
+        resourceType: "device_access_invite",
+        resourceId: inviteId,
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
+        metadata: { deviceId: device.id },
+      },
+    });
+    sendJson(res, 200, { invite });
+    return;
+  }
+
+  if (segments.length === 5 && segments[3] === "access-grants" && method === "DELETE") {
+    if (!isPlatformAdminUser(user)) {
+      throw httpError(
+        403,
+        "Chỉ Platform Admin được thu hồi quyền truy cập thiết bị",
+        "DEVICE_ACCESS_PLATFORM_ADMIN_REQUIRED",
+      );
+    }
+    const grantId = decodeURIComponent(segments[4]);
+    const context = getRequestContext(req) || createRequestContext(req);
+    const grant = await repositories.deviceAccess.revokeGrant({
+      grantId,
+      deviceId: device.id,
+      actorUserId: user.id,
+      at: nowIso(),
+      audit: {
+        action: "device.access.grant.revoke",
+        actorUserId: user.id,
+        organizationId: device.organizationId || "",
+        resourceType: "device_access_grant",
+        resourceId: grantId,
+        ip: context.ip || "",
+        userAgent: context.userAgent || "",
+        metadata: { deviceId: device.id },
+      },
+    });
+    sendJson(res, 200, { grant });
+    return;
+  }
+
   if (segments.length === 4 && segments[3] === "setup-session" && method === "POST") {
     // An assigned user may provision only their own device. Ownership mutations
     // still require DeviceManage; tenant scope and assignment are checked here.
@@ -20600,7 +20869,7 @@ async function handleDevicesApi(req, res, url, segments) {
     // responsible doctor already owns the device. Wi-Fi provisioning is bound to that canonical
     // owner, not to the patient-assignment lifecycle label.
     const assignedPrincipalId = readString(device.ownerUserId || device.pairedUserId, 120);
-    if (!assignedPrincipalId) {
+    if (!assignedPrincipalId && !getDeviceAccessGrant(user, device)) {
       throw httpError(
         409,
         "The device must be assigned before Wi-Fi setup can be opened",
@@ -20767,7 +21036,7 @@ async function handleDevicesApi(req, res, url, segments) {
   if (segments.length === 3 && method === "GET") {
     assertCanAccessDevice(user, device);
     await expireDeviceCredentialRotation(device);
-    sendJson(res, 200, { device: publicDevice(device) });
+    sendJson(res, 200, { device: publicDeviceForUser(user, device) });
     return;
   }
 

@@ -20,11 +20,7 @@ import { Link } from "react-router";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-} from "../../../components/ui/card";
+import { Card, CardContent, CardHeader } from "../../../components/ui/card";
 import { Skeleton } from "../../../components/ui/skeleton";
 import {
   smartHealthApi,
@@ -142,11 +138,7 @@ export default function DevicesPage() {
     user?.capabilities.includes("workspace.devices.manage") ||
     user?.capabilities.includes("platform.devices.manage"),
   );
-  const canClaim = Boolean(
-    user?.capabilities.includes("workspace.devices.manage") ||
-    user?.capabilities.includes("platform.devices.manage") ||
-    user?.capabilities.includes("personal.devices.manage"),
-  );
+  const canRedeemDeviceCode = Boolean(user?.id && workspaceId);
   useEffect(() => {
     const updateOnline = () => setOnline(navigator.onLine);
     window.addEventListener("online", updateOnline);
@@ -204,7 +196,7 @@ export default function DevicesPage() {
             />
             Làm mới
           </Button>
-          {canClaim && (
+          {canRedeemDeviceCode && (
             <Button asChild className="min-h-11">
               <Link to="/portal/devices/claim">
                 <Plus aria-hidden="true" />
@@ -247,7 +239,9 @@ export default function DevicesPage() {
         <DeviceListLoading />
       ) : devices.error && !hasSnapshot ? (
         isPermissionError(devices.error) ? (
-          <DevicePermissionState requestId={(devices.error as ApiError).requestId} />
+          <DevicePermissionState
+            requestId={(devices.error as ApiError).requestId}
+          />
         ) : (
           <DeviceListError
             error={devices.error}
@@ -340,8 +334,8 @@ function DevicePermissionState({ requestId }: { requestId?: string }) {
           Không có quyền xem thiết bị của workspace này
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Backend đã từ chối truy cập. Hãy kiểm tra workspace đang chọn và
-          quyền được cấp cho tài khoản.
+          Backend đã từ chối truy cập. Hãy kiểm tra workspace đang chọn và quyền
+          được cấp cho tài khoản.
         </p>
         {requestId ? (
           <p className="mt-2 font-mono text-xs text-muted-foreground">
@@ -365,7 +359,9 @@ function DeviceOfflineState({ hasSnapshot }: { hasSnapshot: boolean }) {
           className="mt-0.5 shrink-0 text-[var(--clinical-warning)]"
         />
         <div>
-          <p className="font-semibold text-foreground">Trình duyệt đang ngoại tuyến</p>
+          <p className="font-semibold text-foreground">
+            Trình duyệt đang ngoại tuyến
+          </p>
           <p className="mt-1 text-sm text-muted-foreground">
             {hasSnapshot
               ? "Danh sách đang hiển thị là snapshot đã tải và có thể đã cũ. Kết nối lại để làm mới trạng thái."
@@ -407,7 +403,12 @@ function DeviceRefreshWarning({
             telemetry có thể đã cũ.
           </p>
         </div>
-        <Button type="button" variant="outline" className="min-h-11" onClick={retry}>
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-11"
+          onClick={retry}
+        >
           Thử lại
         </Button>
       </CardContent>
@@ -540,12 +541,12 @@ function hasReportedTelemetry(
 ): telemetry is NonNullable<Device["telemetry"]> {
   return Boolean(
     telemetry &&
-      Object.values(telemetry).some(
-        (value) =>
-          value !== undefined &&
-          value !== null &&
-          (typeof value !== "string" || value.trim().length > 0),
-      ),
+    Object.values(telemetry).some(
+      (value) =>
+        value !== undefined &&
+        value !== null &&
+        (typeof value !== "string" || value.trim().length > 0),
+    ),
   );
 }
 
@@ -637,8 +638,9 @@ function DeviceTelemetryHealth({
         </DeviceMetric>
       </dl>
       <p className="mt-3 border-t border-border pt-3 text-xs leading-5 text-muted-foreground">
-        Lần thiết bị liên hệ hệ thống gần nhất: {formatSystemContact(lastSeenAt)}.{" "}
-        Đây không phải thời điểm đo riêng của từng chỉ số.
+        Lần thiết bị liên hệ hệ thống gần nhất:{" "}
+        {formatSystemContact(lastSeenAt)}. Đây không phải thời điểm đo riêng của
+        từng chỉ số.
       </p>
     </section>
   );

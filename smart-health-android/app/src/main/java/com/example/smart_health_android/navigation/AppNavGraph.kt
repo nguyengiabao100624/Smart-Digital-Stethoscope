@@ -1111,26 +1111,16 @@ fun AppNavGraph(
                     defaultValue = ""
                 }
             )
-        ) { backStackEntry ->
-            val returnRoute = resolveSafeDeviceReturnRoute(
-                backStackEntry.arguments?.getString("returnRoute"),
-            )
-            DevicePairingScreen(
+        ) {
+            DeviceAccessRedeemScreen(
                 expectedAuthority = devicePairingAuthority,
                 currentAuthority = currentDevicePairingAuthority,
                 onNavigateBack = { navController.popBackStack() },
-                onDeviceRegistered = { deviceId ->
+                onDeviceGranted = { deviceId ->
                     navController.navigate("device-management?deviceId=${Uri.encode(deviceId)}") {
                         popUpTo("device-pairing?returnRoute={returnRoute}") { inclusive = true }
                     }
                 },
-                onConnectionSuccess = { deviceName ->
-                    navController.navigate(
-                        "connection-success/${Uri.encode(deviceName)}?returnRoute=${Uri.encode(returnRoute)}"
-                    ) {
-                        popUpTo("device-pairing?returnRoute={returnRoute}") { inclusive = true }
-                    }
-                }
             )
         }
 
@@ -1169,26 +1159,16 @@ fun AppNavGraph(
                     defaultValue = ""
                 }
             )
-        ) { backStackEntry ->
-            val returnRoute = resolveSafeDeviceReturnRoute(
-                backStackEntry.arguments?.getString("returnRoute"),
-            )
-            DevicePairingScreen(
+        ) {
+            DeviceAccessRedeemScreen(
                 expectedAuthority = devicePairingAuthority,
                 currentAuthority = currentDevicePairingAuthority,
                 onNavigateBack = { navController.popBackStack() },
-                onDeviceRegistered = { deviceId ->
+                onDeviceGranted = { deviceId ->
                     navController.navigate("device-management?deviceId=${Uri.encode(deviceId)}") {
                         popUpTo("bluetooth?returnRoute={returnRoute}") { inclusive = true }
                     }
                 },
-                onConnectionSuccess = { deviceName ->
-                    navController.navigate(
-                        "connection-success/${Uri.encode(deviceName)}?returnRoute=${Uri.encode(returnRoute)}"
-                    ) {
-                        popUpTo("bluetooth?returnRoute={returnRoute}") { inclusive = true }
-                    }
-                }
             )
         }
 
@@ -1271,8 +1251,8 @@ fun AppNavGraph(
                 logoutCoordinator = settingsLogoutCoordinator,
                 canManageFamilyProfiles =
                     settingsRouteBinding.features.canManageFamilyProfiles,
-                canManageStethoscope =
-                    settingsRouteBinding.features.canManageStethoscope,
+                canAccessStethoscope =
+                    settingsRouteBinding.features.canAccessStethoscope,
                 canViewAiCalibration =
                     settingsRouteBinding.features.canViewAiCalibration,
                 canViewDataStorage =

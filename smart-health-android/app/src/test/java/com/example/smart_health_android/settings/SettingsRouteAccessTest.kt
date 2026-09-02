@@ -24,7 +24,7 @@ class SettingsRouteAccessTest {
 
         assertTrue(binding.authority != null)
         assertTrue(binding.features.canManageFamilyProfiles)
-        assertTrue(binding.features.canManageStethoscope)
+        assertTrue(binding.features.canAccessStethoscope)
         assertFalse(binding.features.canViewAiCalibration)
         assertTrue(binding.features.canViewDataStorage)
     }
@@ -43,13 +43,13 @@ class SettingsRouteAccessTest {
         )
 
         assertFalse(binding.features.canManageFamilyProfiles)
-        assertTrue(binding.features.canManageStethoscope)
+        assertTrue(binding.features.canAccessStethoscope)
         assertTrue(binding.features.canViewAiCalibration)
         assertTrue(binding.features.canViewDataStorage)
     }
 
     @Test
-    fun `missing capabilities independently hide stethoscope and storage`() {
+    fun `authenticated users retain device access while storage remains capability gated`() {
         val binding = bindSettingsRouteAccess(
             context = context(
                 experience = MobileExperience.Clinical,
@@ -59,7 +59,7 @@ class SettingsRouteAccessTest {
         )
 
         assertFalse(binding.features.canManageFamilyProfiles)
-        assertFalse(binding.features.canManageStethoscope)
+        assertTrue(binding.features.canAccessStethoscope)
         assertTrue(binding.features.canViewAiCalibration)
         assertFalse(binding.features.canViewDataStorage)
     }

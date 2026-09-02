@@ -90,7 +90,7 @@ class ShcareMobileRouteContractTest {
     }
 
     @Test
-    fun deviceWifiSetupRouteIsTypedAndRequiresDeviceManagementCapability() {
+    fun deviceWifiSetupRouteIsTypedAndLetsBackendEnforcePerDeviceAccess() {
         assertEquals(
             "route.device-wifi",
             ShcareMobileRouteContract.rootTestTagFor("device-wifi/device-42"),
@@ -98,14 +98,14 @@ class ShcareMobileRouteContractTest {
         assertTrue(
             ShcareMobileRouteContract.evaluate(
                 "device-wifi/device-42",
-                patientAuthority(capabilities = setOf("personal.devices.manage")),
+                patientAuthority(capabilities = emptySet()),
             ) is MobileRouteAccessDecision.Allowed,
         )
     }
 
     @Test
     fun deviceManagementRouteSelectsAnOptionalDeviceAndKeepsTheBluetoothRouteAsAnAlias() {
-        val authority = patientAuthority(capabilities = setOf("personal.devices.manage"))
+        val authority = patientAuthority(capabilities = emptySet())
 
         assertEquals(
             "route.device-management",
@@ -126,7 +126,7 @@ class ShcareMobileRouteContractTest {
     }
 
     @Test
-    fun doctorCanViewAndProvisionAssignedDeviceWithoutReceivingPairingPermission() {
+    fun authenticatedDoctorCanRedeemADeviceCodeWithoutWorkspaceManageCapability() {
         val doctor = clinicalAuthority(capabilities = setOf("workspace.devices.view"))
 
         listOf(
@@ -141,16 +141,12 @@ class ShcareMobileRouteContractTest {
             )
         }
 
-        listOf(
-            "device-pairing?returnRoute=dashboard",
-        ).forEach { route ->
-            val decision = ShcareMobileRouteContract.evaluate(route, doctor)
-            assertEquals(
-                route,
-                MobileRouteDenialReason.CapabilityMissing,
-                (decision as MobileRouteAccessDecision.Denied).reason,
-            )
-        }
+        assertTrue(
+            ShcareMobileRouteContract.evaluate(
+                "device-pairing?returnRoute=dashboard",
+                doctor,
+            ) is MobileRouteAccessDecision.Allowed,
+        )
     }
 
     @Test

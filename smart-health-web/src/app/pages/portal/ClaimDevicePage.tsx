@@ -4,13 +4,10 @@ import {
   ArrowLeft,
   CheckCircle2,
   CircleAlert,
-  Clock3,
+  KeyRound,
   Loader2,
-  QrCode,
   RefreshCw,
   ShieldCheck,
-  Wifi,
-  WifiOff,
 } from "lucide-react";
 import { Link } from "react-router";
 
@@ -28,102 +25,90 @@ import { Label } from "../../../components/ui/label";
 import {
   smartHealthApi,
   type ApiError,
-  type DevicePairingResponse,
+  type DeviceAccessRedeemResponse,
 } from "../../../lib/smart-health-api";
 import { useAuth } from "../../context/AuthContext";
 
-const DEVICE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{2,62}$/;
-const CLAIM_CODE_PATTERN = /^[A-Za-z0-9_-]{6,80}$/;
+const ACCESS_CODE_PATTERN = /^SHC-[A-HJ-NP-Z2-9]{4}(?:-[A-HJ-NP-Z2-9]{4}){3}$/;
 
-type ClaimFields = {
-  deviceId?: string;
-  claimCode?: string;
-};
-
-type ClaimFailure = {
-  kind: "offline" | "expired" | "permission" | "api";
+type RedeemFailure = {
   title: string;
   message: string;
-  guidance: string;
   retryable: boolean;
 };
 
-type ClaimIntent = {
+type RedeemIntent = {
   userId: string;
   workspaceId: string;
-  deviceId: string;
-  claimCode: string;
+  code: string;
   idempotencyKey: string;
 };
 
+function normalizeAccessCode(value: string) {
+  const compact = value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+  if (!compact.startsWith("SHC") || compact.length !== 19) return "";
+  const body = compact.slice(3);
+  const formatted = `SHC-${body.match(/.{1,4}/g)?.join("-") || ""}`;
+  return ACCESS_CODE_PATTERN.test(formatted) ? formatted : "";
+}
+
 function createIntentKey() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return `portal-device-claim-${crypto.randomUUID()}`;
+    return `portal-device-access-${crypto.randomUUID()}`;
   }
-  return `portal-device-claim-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `portal-device-access-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function validateClaim(deviceId: string, claimCode: string): ClaimFields {
-  const errors: ClaimFields = {};
-
-  if (!deviceId) {
-    errors.deviceId = "Vui lòng nhập Device ID.";
-  } else if (!DEVICE_ID_PATTERN.test(deviceId)) {
-    errors.deviceId =
-      "Device ID chỉ được chứa chữ, số, dấu gạch ngang hoặc gạch dưới; dài 3–63 ký tự.";
-  }
-
-  if (!claimCode) {
-    errors.claimCode = "Vui lòng nhập claim code.";
-  } else if (!CLAIM_CODE_PATTERN.test(claimCode)) {
-    errors.claimCode =
-      "Claim code phải có từ 6 đến 80 ký tự gồm chữ, số, dấu gạch ngang hoặc gạch dưới.";
-  }
-
-  return errors;
-}
-
-function classifyClaimFailure(error: unknown): ClaimFailure {
+function classifyFailure(error: unknown): RedeemFailure {
   const apiError = error as ApiError;
-  if (apiError?.status === 403) {
+  if (apiError?.code === "DEVICE_ACCESS_CODE_ALREADY_USED") {
     return {
-      kind: "permission",
-      title: "Không có quyền ghép thiết bị",
-      message: "Backend đã từ chối thao tác cho workspace hiện tại.",
-      guidance: "Liên hệ quản trị viên workspace để được cấp quyền.",
+      title: "Mã đã được sử dụng",
+      message:
+        "Mã này đã được một tài khoản khác đổi. Hãy nhờ Platform Admin tạo mã mới.",
       retryable: false,
     };
   }
-
-  if (apiError?.code === "DEVICE_CLAIM_EXPIRED") {
+  if (
+    apiError?.status === 410 ||
+    [
+      "DEVICE_ACCESS_CODE_EXPIRED",
+      "DEVICE_ACCESS_CODE_REVOKED",
+      "DEVICE_ACCESS_DEVICE_UNAVAILABLE",
+    ].includes(apiError?.code || "")
+  ) {
     return {
-      kind: "expired",
-      title: "Claim code đã hết hạn",
-      message: "Mã một lần này không còn hiệu lực nên thiết bị chưa được ghép.",
-      guidance: "Nhập claim code mới được cấp cho đúng thiết bị rồi gửi lại.",
+      title: "Mã không còn hiệu lực",
+      message:
+        "Mã đã hết hạn, bị thu hồi hoặc thiết bị không còn sẵn sàng.",
       retryable: false,
     };
   }
-
+  if (apiError?.status === 400 || apiError?.status === 403) {
+    return {
+      title: "Không thể cấp quyền thiết bị",
+      message: "Mã không hợp lệ hoặc không thuộc workspace đang chọn.",
+      retryable: false,
+    };
+  }
   if (
     typeof navigator !== "undefined" &&
     (!navigator.onLine || !apiError?.status)
   ) {
     return {
-      kind: "offline",
-      title: navigator.onLine ? "Mất kết nối với backend" : "Thiết bị đang ngoại tuyến",
-      message: "Chưa xác định backend đã nhận yêu cầu hay chưa.",
-      guidance:
-        "Giữ nguyên Device ID và claim code, kiểm tra kết nối rồi dùng nút bên dưới để tránh ghép trùng.",
+      title: "Chưa kết nối được máy chủ",
+      message: "Giữ nguyên mã, kiểm tra mạng rồi thử lại cùng yêu cầu.",
       retryable: true,
     };
   }
-
   return {
-    kind: "api",
-    title: "Không thể ghép thiết bị",
-    message: apiError?.message || "Backend không thể xử lý yêu cầu ghép thiết bị.",
-    guidance: "Kiểm tra thông tin và thử lại. Nếu lỗi tiếp diễn, liên hệ quản trị viên.",
+    title: "Máy chủ chưa xác nhận",
+    message:
+      apiError?.message ||
+      "Chưa có quyền nào được cấp. Vui lòng thử lại.",
     retryable: true,
   };
 }
@@ -131,91 +116,67 @@ function classifyClaimFailure(error: unknown): ClaimFailure {
 export default function ClaimDevicePage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const [deviceId, setDeviceId] = useState("");
-  const [claimCode, setClaimCode] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<ClaimFields>({});
-  const [failure, setFailure] = useState<ClaimFailure | null>(null);
-  const [result, setResult] = useState<DevicePairingResponse | null>(null);
-  const [presenceMessage, setPresenceMessage] = useState("");
-  const [checkingPresence, setCheckingPresence] = useState(false);
+  const [code, setCode] = useState("");
+  const [fieldError, setFieldError] = useState("");
+  const [failure, setFailure] = useState<RedeemFailure | null>(null);
+  const [result, setResult] = useState<DeviceAccessRedeemResponse | null>(null);
   const intentKeyRef = useRef("");
   const inFlightKeyRef = useRef("");
-
-  const capabilities = user?.capabilities || [];
-  const canClaim = capabilities.some((capability) =>
-    [
-      "workspace.devices.manage",
-      "platform.devices.manage",
-      "personal.devices.manage",
-    ].includes(capability),
-  );
   const workspaceId = user?.currentWorkspace.id || "";
   const userId = user?.id || "";
-  const activeAuthorityRef = useRef({ userId, workspaceId });
-  activeAuthorityRef.current = { userId, workspaceId };
+  const authorityRef = useRef({ userId, workspaceId });
+  authorityRef.current = { userId, workspaceId };
 
   useEffect(() => {
     intentKeyRef.current = "";
     inFlightKeyRef.current = "";
+    setCode("");
+    setFieldError("");
     setFailure(null);
     setResult(null);
-    setPresenceMessage("");
-    setCheckingPresence(false);
   }, [userId, workspaceId]);
 
-  const ownsActiveAuthority = (intent: ClaimIntent) =>
-    intent.userId === activeAuthorityRef.current.userId &&
-    intent.workspaceId === activeAuthorityRef.current.workspaceId;
-
-  const claim = useMutation<DevicePairingResponse, unknown, ClaimIntent>({
-    mutationFn: ({
-      deviceId: exactDeviceId,
-      claimCode: exactClaimCode,
-      workspaceId: exactWorkspaceId,
-      idempotencyKey,
-    }) =>
-      smartHealthApi.activateDeviceByClaim(
-        {
-          deviceId: exactDeviceId,
-          claimCode: exactClaimCode,
-          connectionMethod: "Manual",
-          organizationId: exactWorkspaceId,
-        },
-        idempotencyKey,
-    ),
+  const redeem = useMutation<DeviceAccessRedeemResponse, unknown, RedeemIntent>({
+    mutationFn: (intent) =>
+      smartHealthApi.redeemDeviceAccess(intent.code, intent.idempotencyKey),
     onSuccess: async (response, intent) => {
       if (
-        intentKeyRef.current !== intent.idempotencyKey ||
-        !ownsActiveAuthority(intent)
+        intent.idempotencyKey !== intentKeyRef.current ||
+        intent.userId !== authorityRef.current.userId ||
+        intent.workspaceId !== authorityRef.current.workspaceId
       ) {
         return;
       }
-      if (response.device.organizationId !== intent.workspaceId) {
-        setResult(null);
-        setFailure(
-          classifyClaimFailure(
-            new Error("Biên nhận ghép không thuộc workspace hiện tại."),
-          ),
-        );
+      if (
+        response.grant.userId !== intent.userId ||
+        response.grant.organizationId !== intent.workspaceId ||
+        response.device.organizationId !== intent.workspaceId
+      ) {
+        setFailure({
+          title: "Biên nhận không khớp quyền hiện tại",
+          message:
+            "Máy chủ trả về thiết bị ngoài workspace đang chọn. Chưa có dữ liệu nào được dùng.",
+          retryable: false,
+        });
         return;
       }
       setResult(response);
       setFailure(null);
-      setPresenceMessage("");
-      inFlightKeyRef.current = "";
+      setCode("");
       intentKeyRef.current = "";
+      inFlightKeyRef.current = "";
       await queryClient.invalidateQueries({
         queryKey: ["portal", "workspace", workspaceId, "devices"],
       });
     },
     onError: (error, intent) => {
       if (
-        intentKeyRef.current !== intent.idempotencyKey ||
-        !ownsActiveAuthority(intent)
+        intent.idempotencyKey === intentKeyRef.current &&
+        intent.userId === authorityRef.current.userId &&
+        intent.workspaceId === authorityRef.current.workspaceId
       ) {
-        return;
+        setFailure(classifyFailure(error));
       }
-      setFailure(classifyClaimFailure(error));
     },
     onSettled: (_data, _error, intent) => {
       if (inFlightKeyRef.current === intent.idempotencyKey) {
@@ -229,126 +190,38 @@ export default function ClaimDevicePage() {
     inFlightKeyRef.current = "";
     setFailure(null);
     setResult(null);
-    setPresenceMessage("");
   };
 
-  const submitClaim = () => {
-    const errors = validateClaim(deviceId, claimCode);
-    setFieldErrors(errors);
-    if (Object.keys(errors).length > 0) return;
-    if (inFlightKeyRef.current) return;
-
-    const idempotencyKey = intentKeyRef.current || createIntentKey();
-    intentKeyRef.current = idempotencyKey;
-    inFlightKeyRef.current = idempotencyKey;
-    setFailure(null);
-
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      inFlightKeyRef.current = "";
-      setFailure(classifyClaimFailure(new Error("Browser is offline")));
+  const submit = () => {
+    const normalized = normalizeAccessCode(code);
+    if (!normalized) {
+      setFieldError("Mã phải có dạng SHC-XXXX-XXXX-XXXX-XXXX.");
       return;
     }
-
-    claim.mutate({ userId, workspaceId, deviceId, claimCode, idempotencyKey });
+    if (!workspaceId || !userId || inFlightKeyRef.current) return;
+    const idempotencyKey = intentKeyRef.current || createIntentKey();
+    intentKeyRef.current = idempotencyKey;
+    setCode(normalized);
+    setFieldError("");
+    setFailure(null);
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      setFailure(classifyFailure(new Error("Browser is offline.")));
+      return;
+    }
+    inFlightKeyRef.current = idempotencyKey;
+    redeem.mutate({ userId, workspaceId, code: normalized, idempotencyKey });
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    submitClaim();
+    submit();
   };
-
-  const checkPresence = async () => {
-    if (!result || checkingPresence) return;
-    const checkAuthority = { userId, workspaceId };
-    const checkedDeviceId = result.device.id;
-    setCheckingPresence(true);
-    setPresenceMessage("");
-    try {
-      const response = await smartHealthApi.listDevices(workspaceId);
-      if (
-        activeAuthorityRef.current.userId !== checkAuthority.userId ||
-        activeAuthorityRef.current.workspaceId !== checkAuthority.workspaceId
-      ) {
-        return;
-      }
-      const currentDevice = response.devices.find(
-        (device) =>
-          device.id === checkedDeviceId &&
-          device.organizationId === checkAuthority.workspaceId,
-      );
-      if (currentDevice?.online) {
-        setResult({
-          ...result,
-          device: currentDevice,
-          pairing: {
-            ...result.pairing,
-            outcome: "success",
-            presence: "online",
-            onlineConfirmed: true,
-          },
-        });
-        setPresenceMessage("Thiết bị đã đăng nhập WSS và backend xác nhận Online.");
-        await queryClient.invalidateQueries({
-          queryKey: ["portal", "workspace", workspaceId, "devices"],
-        });
-      } else {
-        setPresenceMessage(
-          "Thiết bị vẫn chưa Online. Hãy kiểm tra nguồn, Wi-Fi rồi kiểm tra lại.",
-        );
-      }
-    } catch {
-      if (
-        activeAuthorityRef.current.userId !== checkAuthority.userId ||
-        activeAuthorityRef.current.workspaceId !== checkAuthority.workspaceId
-      ) {
-        return;
-      }
-      setPresenceMessage(
-        "Không thể kiểm tra trạng thái lúc này. Kết quả ghép đã chấp nhận vẫn được giữ; vui lòng thử lại.",
-      );
-    } finally {
-      if (
-        activeAuthorityRef.current.userId === checkAuthority.userId &&
-        activeAuthorityRef.current.workspaceId === checkAuthority.workspaceId
-      ) {
-        setCheckingPresence(false);
-      }
-    }
-  };
-
-  if (!canClaim) {
-    return (
-      <div className="mx-auto max-w-2xl">
-        <Card role="alert" className="border-destructive/40">
-          <CardHeader>
-            <div className="mb-2 flex size-10 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-              <ShieldCheck aria-hidden="true" />
-            </div>
-            <CardTitle>Không có quyền ghép thiết bị</CardTitle>
-            <CardDescription>
-              Tài khoản hiện tại không có capability dùng mã claim trong workspace này.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm leading-6">
-              Nếu Platform Admin đã phân công thiết bị trực tiếp cho tài khoản này, bạn không cần
-              claim code: mở App Shcare và nhập Device ID. Nếu thiết bị vẫn ở kho chưa phân công,
-              hãy nhờ Admin cấp mã claim một lần hoặc phân công trực tiếp.
-            </p>
-            <Button asChild variant="outline" className="min-h-11">
-              <Link to="/portal/devices">
-                <ArrowLeft aria-hidden="true" />
-                Quay lại thiết bị
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
-    <main className="mx-auto max-w-3xl space-y-6" aria-labelledby="claim-device-title">
+    <main
+      className="mx-auto max-w-3xl space-y-6"
+      aria-labelledby="device-access-title"
+    >
       <Button asChild variant="ghost" className="min-h-11 px-2">
         <Link to="/portal/devices">
           <ArrowLeft aria-hidden="true" />
@@ -359,14 +232,18 @@ export default function ClaimDevicePage() {
       <header className="space-y-2">
         <div className="flex items-center gap-3">
           <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <QrCode aria-hidden="true" />
+            <KeyRound aria-hidden="true" />
           </div>
           <div>
-            <h1 id="claim-device-title" className="text-2xl font-semibold tracking-tight">
-              Ghép thiết bị Shcare
+            <h1
+              id="device-access-title"
+              className="text-2xl font-semibold tracking-tight"
+            >
+              Thêm thiết bị bằng mã truy cập
             </h1>
             <p className="text-sm text-muted-foreground">
-              Dùng cho thiết bị chưa được Admin phân công trực tiếp cho tài khoản.
+              Không cần Device ID. Mã xác định đúng thiết bị và phạm vi quyền
+              được cấp.
             </p>
           </div>
         </div>
@@ -374,90 +251,79 @@ export default function ClaimDevicePage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Thông tin xác thực</CardTitle>
+          <CardTitle>Mã do Platform Admin cấp</CardTitle>
           <CardDescription>
-            Claim code là mã bàn giao dùng một lần do Platform Admin tạo. Thiết bị đã được Admin
-            phân công thì không dùng màn này; người dùng chỉ nhập Device ID trong App. Hệ thống giữ
-            nguyên chữ hoa, chữ thường của cả hai giá trị.
+            Mỗi mã chỉ dùng một lần và có thời hạn. QR trên tem hoặc màn Admin
+            chứa đúng mã này, không chứa Device ID hay khóa bí mật.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form method="post" className="space-y-6" onSubmit={handleSubmit} noValidate>
-            <div className="grid gap-5 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="claim-device-id">Device ID</Label>
-                <Input
-                  id="claim-device-id"
-                  name="claimDeviceId"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={deviceId}
-                  onChange={(event) => {
-                    setDeviceId(event.target.value);
-                    setFieldErrors((current) => ({ ...current, deviceId: undefined }));
-                    resetIntent();
-                  }}
-                  placeholder="VD: Device_Aa-01"
-                  className="min-h-11 font-mono"
-                  aria-invalid={Boolean(fieldErrors.deviceId)}
-                  aria-describedby={fieldErrors.deviceId ? "claim-device-id-error" : undefined}
-                />
-                {fieldErrors.deviceId ? (
-                  <p id="claim-device-id-error" role="alert" className="text-sm text-destructive">
-                    {fieldErrors.deviceId}
-                  </p>
-                ) : null}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="claim-device-code">Claim code</Label>
-                <Input
-                  id="claim-device-code"
-                  name="claimDeviceCode"
-                  autoComplete="one-time-code"
-                  spellCheck={false}
-                  value={claimCode}
-                  onChange={(event) => {
-                    setClaimCode(event.target.value);
-                    setFieldErrors((current) => ({ ...current, claimCode: undefined }));
-                    resetIntent();
-                  }}
-                  placeholder="VD: Claim_aB-123"
-                  className="min-h-11 font-mono"
-                  aria-invalid={Boolean(fieldErrors.claimCode)}
-                  aria-describedby={fieldErrors.claimCode ? "claim-device-code-error" : undefined}
-                />
-                {fieldErrors.claimCode ? (
-                  <p id="claim-device-code-error" role="alert" className="text-sm text-destructive">
-                    {fieldErrors.claimCode}
-                  </p>
-                ) : null}
-              </div>
+          <form className="space-y-5" onSubmit={handleSubmit} noValidate>
+            <div className="space-y-2">
+              <Label htmlFor="device-access-code">Mã truy cập</Label>
+              <Input
+                id="device-access-code"
+                name="deviceAccessCode"
+                autoComplete="one-time-code"
+                autoCapitalize="characters"
+                spellCheck={false}
+                value={code}
+                onChange={(event) => {
+                  setCode(event.target.value.slice(0, 120));
+                  setFieldError("");
+                  resetIntent();
+                }}
+                placeholder="SHC-XXXX-XXXX-XXXX-XXXX"
+                className="min-h-11 font-mono uppercase"
+                aria-invalid={Boolean(fieldError)}
+                aria-describedby={
+                  fieldError ? "device-access-code-error" : "device-access-help"
+                }
+              />
+              <p id="device-access-help" className="text-sm text-muted-foreground">
+                Có thể nhập có hoặc không có dấu gạch ngang; hệ thống tự chuẩn
+                hóa trước khi gửi.
+              </p>
+              {fieldError ? (
+                <p
+                  id="device-access-code-error"
+                  role="alert"
+                  className="text-sm text-destructive"
+                >
+                  {fieldError}
+                </p>
+              ) : null}
             </div>
 
             <div className="flex gap-3 rounded-xl border bg-muted/40 p-4 text-sm">
-              <ShieldCheck className="mt-0.5 shrink-0 text-primary" aria-hidden="true" />
+              <ShieldCheck
+                className="mt-0.5 shrink-0 text-primary"
+                aria-hidden="true"
+              />
               <p>
-                Backend kiểm tra quyền workspace và mã claim. Portal chỉ báo thiết bị Online sau
-                khi backend xác nhận kết nối thiết bị đã được xác thực.
+                Mã “Xem &amp; kết nối Wi-Fi” không cho phép sửa hoặc gỡ thiết
+                bị. Mã “Quản lý thiết bị” chỉ cấp quyền quản lý đúng thiết bị
+                đó, không biến tài khoản thành Admin.
               </p>
             </div>
 
             <Button
-              id="claim-device-submit"
               type="submit"
               className="min-h-11 w-full"
-              disabled={claim.isPending && Boolean(inFlightKeyRef.current)}
+              disabled={redeem.isPending && Boolean(inFlightKeyRef.current)}
             >
-              {claim.isPending && Boolean(inFlightKeyRef.current) ? (
+              {redeem.isPending && Boolean(inFlightKeyRef.current) ? (
                 <>
-                  <Loader2 className="animate-spin" aria-hidden="true" />
-                  Đang gửi yêu cầu…
+                  <Loader2
+                    className="animate-spin motion-reduce:animate-none"
+                    aria-hidden="true"
+                  />
+                  Đang xác nhận…
                 </>
               ) : (
                 <>
                   <CheckCircle2 aria-hidden="true" />
-                  Xác nhận ghép thiết bị
+                  Thêm thiết bị
                 </>
               )}
             </Button>
@@ -466,104 +332,56 @@ export default function ClaimDevicePage() {
       </Card>
 
       {failure ? (
-        <Card role="alert" className="border-destructive/40" aria-live="assertive">
+        <Card role="alert" aria-live="assertive" className="border-destructive/40">
           <CardHeader className="flex-row items-start gap-3 space-y-0">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-              {failure.kind === "offline" ? (
-                <WifiOff aria-hidden="true" />
-              ) : (
-                <CircleAlert aria-hidden="true" />
-              )}
+              <CircleAlert aria-hidden="true" />
             </div>
             <div className="space-y-1.5">
               <CardTitle>{failure.title}</CardTitle>
               <CardDescription>{failure.message}</CardDescription>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm">{failure.guidance}</p>
-            {failure.retryable ? (
+          {failure.retryable ? (
+            <CardContent>
               <Button
                 type="button"
                 variant="outline"
                 className="min-h-11"
-                onClick={submitClaim}
-                disabled={claim.isPending && Boolean(inFlightKeyRef.current)}
+                onClick={submit}
               >
                 <RefreshCw aria-hidden="true" />
                 Thử lại cùng yêu cầu
               </Button>
-            ) : null}
-          </CardContent>
+            </CardContent>
+          ) : null}
         </Card>
       ) : null}
 
       {result ? (
-        <Card className={result.pairing.onlineConfirmed ? "border-emerald-600/40" : "border-primary/30"}>
+        <Card role="status" aria-live="polite" className="border-emerald-600/40">
           <CardHeader>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="flex size-10 items-center justify-center rounded-full bg-emerald-600/10 text-emerald-700 dark:text-emerald-400">
-                  {result.pairing.onlineConfirmed ? (
-                    <Wifi aria-hidden="true" />
-                  ) : (
-                    <Clock3 aria-hidden="true" />
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <CardTitle>
-                    {result.pairing.onlineConfirmed
-                      ? "Thiết bị đã xác thực trực tuyến"
-                      : "Backend đã chấp nhận"}
-                  </CardTitle>
-                  <CardDescription className="font-mono">{result.device.id}</CardDescription>
-                </div>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle>Đã thêm thiết bị</CardTitle>
+                <CardDescription>{result.device.name || result.device.id}</CardDescription>
               </div>
-              <Badge variant={result.pairing.onlineConfirmed ? "default" : "secondary"}>
-                {result.pairing.onlineConfirmed ? "Online" : "Đang chờ Online"}
+              <Badge variant="default">
+                {result.grant.accessLevel === "manager"
+                  ? "Quản lý thiết bị"
+                  : "Xem & kết nối Wi-Fi"}
               </Badge>
             </div>
           </CardHeader>
-          <CardContent className="space-y-5">
-            {result.pairing.onlineConfirmed ? (
-              <p className="text-sm">
-                Thiết bị đã đăng nhập bằng transport được xác thực và sẵn sàng hiển thị trạng thái
-                hoạt động thực tế.
-              </p>
-            ) : (
-              <p className="text-sm">
-                Yêu cầu ghép đã được ghi nhận; đang chờ thiết bị xác thực trực tuyến. Chưa thể coi
-                thiết bị là Online ở bước này.
-              </p>
-            )}
-
-            {presenceMessage ? (
-              <p role="status" className="rounded-lg bg-muted px-3 py-2 text-sm" aria-live="polite">
-                {presenceMessage}
-              </p>
-            ) : null}
-
-            <div className="flex flex-col gap-3 sm:flex-row">
-              {!result.pairing.onlineConfirmed ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="min-h-11"
-                  onClick={checkPresence}
-                  disabled={checkingPresence}
-                >
-                  {checkingPresence ? (
-                    <Loader2 className="animate-spin" aria-hidden="true" />
-                  ) : (
-                    <RefreshCw aria-hidden="true" />
-                  )}
-                  {presenceMessage ? "Kiểm tra lại" : "Kiểm tra trạng thái"}
-                </Button>
-              ) : null}
-              <Button asChild className="min-h-11">
-                <Link to="/portal/devices">Mở danh sách thiết bị</Link>
-              </Button>
-            </div>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Máy chủ đã xác nhận quyền cho đúng tài khoản và workspace hiện
+              tại. Thiết bị đã xuất hiện trong danh sách; trạng thái Online vẫn
+              lấy từ phiên WSS thật của thiết bị.
+            </p>
+            <Button asChild className="min-h-11">
+              <Link to="/portal/devices">Mở danh sách thiết bị</Link>
+            </Button>
           </CardContent>
         </Card>
       ) : null}

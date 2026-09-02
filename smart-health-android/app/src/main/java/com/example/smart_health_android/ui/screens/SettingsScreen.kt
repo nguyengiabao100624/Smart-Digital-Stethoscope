@@ -103,7 +103,7 @@ fun SettingsScreen(
     invalidateExpectedAuthority: () -> Unit,
     logoutCoordinator: SettingsLogoutCoordinator,
     canManageFamilyProfiles: Boolean,
-    canManageStethoscope: Boolean,
+    canAccessStethoscope: Boolean,
     canViewAiCalibration: Boolean,
     canViewDataStorage: Boolean,
     showBackNavigation: Boolean = true,
@@ -137,7 +137,7 @@ fun SettingsScreen(
     SettingsOverviewContent(
         state = state,
         canManageFamilyProfiles = canManageFamilyProfiles,
-        canManageStethoscope = canManageStethoscope,
+        canAccessStethoscope = canAccessStethoscope,
         canViewAiCalibration = canViewAiCalibration,
         canViewDataStorage = canViewDataStorage,
         showBackNavigation = showBackNavigation,
@@ -159,7 +159,7 @@ fun SettingsScreen(
 internal fun SettingsOverviewContent(
     state: SettingsOverviewUiState,
     canManageFamilyProfiles: Boolean,
-    canManageStethoscope: Boolean,
+    canAccessStethoscope: Boolean,
     canViewAiCalibration: Boolean,
     canViewDataStorage: Boolean,
     showBackNavigation: Boolean,
@@ -240,7 +240,7 @@ internal fun SettingsOverviewContent(
                 state = state,
                 innerPadding = innerPadding,
                 canManageFamilyProfiles = canManageFamilyProfiles,
-                canManageStethoscope = canManageStethoscope,
+                canAccessStethoscope = canAccessStethoscope,
                 canViewAiCalibration = canViewAiCalibration,
                 canViewDataStorage = canViewDataStorage,
                 onRefresh = { onAction(SettingsOverviewUiAction.Refresh) },
@@ -338,7 +338,7 @@ private fun SettingsOverviewReadyContent(
     state: SettingsOverviewUiState,
     innerPadding: PaddingValues,
     canManageFamilyProfiles: Boolean,
-    canManageStethoscope: Boolean,
+    canAccessStethoscope: Boolean,
     canViewAiCalibration: Boolean,
     canViewDataStorage: Boolean,
     onRefresh: () -> Unit,
@@ -430,7 +430,7 @@ private fun SettingsOverviewReadyContent(
             }
         }
 
-        if (canManageStethoscope || canViewAiCalibration || canViewDataStorage) {
+        if (canAccessStethoscope || canViewAiCalibration || canViewDataStorage) {
             item {
                 SettingsGroup(
                     title = stringResource(
@@ -439,7 +439,7 @@ private fun SettingsOverviewReadyContent(
                     modifier = Modifier.testTag("settings.group.device_analysis"),
                 ) {
                     var hasPreviousItem = false
-                    if (canManageStethoscope) {
+                    if (canAccessStethoscope) {
                         SettingsItem(
                             icon = Icons.Default.Build,
                             title = stringResource(R.string.settings_overview_stethoscope),

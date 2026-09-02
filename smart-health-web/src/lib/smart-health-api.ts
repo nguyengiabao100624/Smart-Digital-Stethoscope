@@ -919,6 +919,8 @@ export interface Device {
   pairedUserId?: string | null;
   assignedPatientId?: string;
   organizationId?: string;
+  accessLevel?: DeviceAccessLevel;
+  accessGrantId?: string;
   firmwareVersion?: string;
   wifiRssi?: number;
   wifiSsid?: string;
@@ -928,6 +930,24 @@ export interface Device {
   lastCommand?: DeviceCommand | null;
   lastSeenAt?: string;
   updatedAt?: string;
+}
+
+export type DeviceAccessLevel = "viewer" | "manager";
+
+export interface DeviceAccessGrant {
+  id: string;
+  deviceId: string;
+  organizationId: string;
+  userId: string;
+  accessLevel: DeviceAccessLevel;
+  status: "active";
+  grantedAt: string;
+}
+
+export interface DeviceAccessRedeemResponse {
+  device: Device;
+  grant: DeviceAccessGrant;
+  idempotent: boolean;
 }
 
 export type DevicePairingPresence = "awaiting_online" | "online";
@@ -1189,13 +1209,17 @@ function patientMutationAuthorityHeaders(
   if (
     values.some(
       (value) =>
-        !value || value !== value.trim() || value.length > 160 || value.includes(","),
+        !value ||
+        value !== value.trim() ||
+        value.length > 160 ||
+        value.includes(","),
     )
   ) {
     throw buildApiError(
       {
         code: "PATIENT_MUTATION_AUTHORITY_INVALID",
-        message: "Phiên tài khoản hoặc workspace của thao tác hồ sơ không hợp lệ.",
+        message:
+          "Phiên tài khoản hoặc workspace của thao tác hồ sơ không hợp lệ.",
       },
       409,
     );
@@ -2432,7 +2456,8 @@ export const smartHealthApi = {
         );
         const retryable =
           !twoFactorRequired &&
-          (!Number.isInteger(apiError?.status) || Number(apiError.status) >= 500);
+          (!Number.isInteger(apiError?.status) ||
+            Number(apiError.status) >= 500);
         if (retryable && attempt < 3) {
           await new Promise((resolve) =>
             globalThis.setTimeout(resolve, attempt * 750),
@@ -2609,13 +2634,9 @@ export const smartHealthApi = {
     return receipt;
   },
   downloadMyAvatar: () => requestBlob("/v1/me/avatar"),
-  getMyAvatarCleanupStatus: () =>
-    request<unknown>("/v1/me/avatar/cleanup"),
+  getMyAvatarCleanupStatus: () => request<unknown>("/v1/me/avatar/cleanup"),
   deleteMyAvatar: async (intent: AvatarDeleteIntent) => {
-    if (
-      !intent.expectedAvatarFileId.trim() ||
-      !intent.idempotencyKey.trim()
-    ) {
+    if (!intent.expectedAvatarFileId.trim() || !intent.idempotencyKey.trim()) {
       throw buildApiError(
         {
           code: "AVATAR_DELETE_INTENT_INVALID",
@@ -2701,10 +2722,7 @@ export const smartHealthApi = {
       }),
     });
     assertCurrentTwoFactorAuthSession(intent.authSessionEpoch);
-    const result = parseTwoFactorEnrollmentReceipt(
-      payload,
-      intent,
-    );
+    const result = parseTwoFactorEnrollmentReceipt(payload, intent);
     return result;
   },
   async acknowledgeTwoFactorRecoveryCodes(intent: TwoFactorRecoveryAckIntent) {
@@ -2719,14 +2737,11 @@ export const smartHealthApi = {
       }),
     });
     assertCurrentTwoFactorAuthSession(intent.authSessionEpoch);
-    const result = parseTwoFactorRecoveryAckReceipt(
-      payload,
-      {
-        userId: intent.userId,
-        enrollmentId: intent.enrollmentId,
-        deliveryId: intent.deliveryId,
-      },
-    );
+    const result = parseTwoFactorRecoveryAckReceipt(payload, {
+      userId: intent.userId,
+      enrollmentId: intent.enrollmentId,
+      deliveryId: intent.deliveryId,
+    });
     setTwoFactorToken(result.twoFactorToken);
     return result;
   },
@@ -2864,16 +2879,23 @@ export const smartHealthApi = {
   ): Promise<PatientMutationAuthority> => {
     const authSessionEpoch = getAuthSessionEpochSnapshot();
     const bearerSnapshot = getToken();
-    if (!bearerSnapshot || !expectedUserId.trim() || !expectedWorkspaceId.trim()) {
+    if (
+      !bearerSnapshot ||
+      !expectedUserId.trim() ||
+      !expectedWorkspaceId.trim()
+    ) {
       throw buildApiError(
         {
           code: "PATIENT_MUTATION_AUTHORITY_REQUIRED",
-          message: "Chưa xác nhận tài khoản, workspace và phiên đăng nhập hiện tại.",
+          message:
+            "Chưa xác nhận tài khoản, workspace và phiên đăng nhập hiện tại.",
         },
         409,
       );
     }
-    const result = await request<{ sessions: AuthSession[] }>("/v1/auth/sessions");
+    const result = await request<{ sessions: AuthSession[] }>(
+      "/v1/auth/sessions",
+    );
     if (
       getAuthSessionEpochSnapshot() !== authSessionEpoch ||
       getToken() !== bearerSnapshot
@@ -3058,13 +3080,10 @@ export const smartHealthApi = {
       workspaceId: string;
       deletedAt: string;
       replayed: boolean;
-    }>(
-      `/portal/appointments/${encodeURIComponent(id)}`,
-      {
-        method: "DELETE",
-        headers: { "Idempotency-Key": idempotencyKey },
-      },
-    ),
+    }>(`/portal/appointments/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: { "Idempotency-Key": idempotencyKey },
+    }),
   async listScans(query: Record<string, QueryValue> = {}) {
     const result = await requestWithResponse<{
       scans: Scan[];
@@ -3188,6 +3207,31 @@ export const smartHealthApi = {
         deviceId: payload.deviceId,
       }),
     ),
+  redeemDeviceAccess: (code: string, idempotencyKey: string) =>
+    request<DeviceAccessRedeemResponse>("/devices/access/redeem", {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ code }),
+    }).then((response) => {
+      const { device, grant } = response;
+      if (
+        !device?.id ||
+        !device.organizationId ||
+        !grant?.id ||
+        !grant.userId ||
+        grant.status !== "active" ||
+        !["viewer", "manager"].includes(grant.accessLevel) ||
+        device.id !== grant.deviceId ||
+        device.organizationId !== grant.organizationId ||
+        device.accessLevel !== grant.accessLevel ||
+        device.accessGrantId !== grant.id
+      ) {
+        throw new Error(
+          "Backend returned an inconsistent device access receipt.",
+        );
+      }
+      return response;
+    }),
   listStaff: () => request<PortalStaffResponse>("/portal/staff"),
   listStaffInvitations: (
     query: {

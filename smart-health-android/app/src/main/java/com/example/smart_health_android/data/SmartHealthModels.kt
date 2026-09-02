@@ -882,6 +882,8 @@ data class SmartDevice(
     val organizationId: String = "",
     val ownerUserId: String = "",
     val assignedPatientId: String = "",
+    val accessLevel: String = "",
+    val accessGrantId: String = "",
     val firmwareVersion: String = "",
     val otaStatus: String = "",
     val audioStatus: String = "",
@@ -890,6 +892,33 @@ data class SmartDevice(
     val telemetry: SmartDeviceTelemetry = SmartDeviceTelemetry(),
     val lastSeenAt: String? = null,
     val updatedAt: String? = null
+)
+
+enum class DeviceAccessLevel(val wireValue: String) {
+    Viewer("viewer"),
+    Manager("manager"),
+    ;
+
+    companion object {
+        fun fromWireValue(value: String): DeviceAccessLevel? =
+            entries.firstOrNull { it.wireValue == value.trim().lowercase() }
+    }
+}
+
+data class DeviceAccessGrant(
+    val id: String,
+    val deviceId: String,
+    val organizationId: String,
+    val userId: String,
+    val accessLevel: DeviceAccessLevel,
+    val status: String,
+    val grantedAt: String,
+)
+
+data class DeviceAccessRedeemResponse(
+    val device: SmartDevice,
+    val grant: DeviceAccessGrant,
+    val idempotent: Boolean,
 )
 
 data class DeviceReleaseReceipt(

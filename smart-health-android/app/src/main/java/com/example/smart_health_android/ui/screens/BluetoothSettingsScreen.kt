@@ -137,7 +137,9 @@ fun DeviceManagementScreen(
 
     val pendingRelease = state.devices.firstOrNull { it.id == pendingReleaseId }
 
-    if (canManageDevice) pendingRelease?.let { device ->
+    pendingRelease?.takeIf { device ->
+        canManageDevice || device.hasManagerAccess()
+    }?.let { device ->
         val name = DeviceHealthSnapshot.from(device).displayName()
         AlertDialog(
             onDismissRequest = { pendingReleaseId = null },
@@ -193,20 +195,18 @@ fun DeviceManagementScreen(
                             )
                         }
                     }
-                    if (canManageDevice) {
-                        IconButton(
-                            onClick = onAddDevice,
-                            enabled = !state.isMutating,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("device_management.add"),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = stringResource(R.string.device_management_add),
-                            )
+                    IconButton(
+                        onClick = onAddDevice,
+                        enabled = !state.isMutating,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("device_management.add"),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = stringResource(R.string.device_management_add),
+                        )
                         }
-                    }
                 },
             )
         },
@@ -258,19 +258,9 @@ private fun DeviceManagementBody(
 
         state.hasLoaded && state.devices.isEmpty() -> ShcareEmptyState(
             title = stringResource(R.string.device_management_empty_title),
-            message = stringResource(
-                if (canManageDevice) {
-                    R.string.device_management_empty_message
-                } else {
-                    R.string.device_management_empty_read_only_message
-                },
-            ),
-            actionLabel = if (canManageDevice) {
-                stringResource(R.string.device_management_add)
-            } else {
-                null
-            },
-            onAction = if (canManageDevice) onAddDevice else null,
+            message = stringResource(R.string.device_management_empty_message),
+            actionLabel = stringResource(R.string.device_management_add),
+            onAction = onAddDevice,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -351,7 +341,10 @@ private fun CompactDeviceManagementContent(
 ) {
     val spacing = ShcareTheme.spacing
     val selectedDevice = state.selectedDevice ?: return
-    val canConfigureWifi = canManageDevice || selectedDevice.belongsTo(currentUserId)
+    val canManageSelectedDevice = canManageDevice || selectedDevice.hasManagerAccess()
+    val canConfigureWifi = canManageSelectedDevice ||
+        selectedDevice.hasViewerAccess() ||
+        selectedDevice.belongsTo(currentUserId)
     val now = remember(state.devices, state.isRefreshing) { Instant.now() }
     LazyColumn(
         modifier = Modifier
@@ -394,12 +387,12 @@ private fun CompactDeviceManagementContent(
                 onRelease = { onRelease(selectedDevice.id) },
                 onConfigureWifi = { onConfigureWifi(selectedDevice.id) },
                 canConfigureWifi = canConfigureWifi,
-                canReleaseDevice = canManageDevice,
+                canReleaseDevice = canManageSelectedDevice,
             )
         }
         item {
             DeviceManagementInfo(
-                canManageDevice = canManageDevice,
+                canManageDevice = canManageSelectedDevice,
                 canConfigureWifi = canConfigureWifi,
             )
         }
@@ -418,7 +411,10 @@ private fun ExpandedDeviceManagementContent(
 ) {
     val spacing = ShcareTheme.spacing
     val selectedDevice = state.selectedDevice ?: return
-    val canConfigureWifi = canManageDevice || selectedDevice.belongsTo(currentUserId)
+    val canManageSelectedDevice = canManageDevice || selectedDevice.hasManagerAccess()
+    val canConfigureWifi = canManageSelectedDevice ||
+        selectedDevice.hasViewerAccess() ||
+        selectedDevice.belongsTo(currentUserId)
     val now = remember(state.devices, state.isRefreshing) { Instant.now() }
     Column(
         modifier = Modifier
@@ -452,7 +448,7 @@ private fun ExpandedDeviceManagementContent(
                 }
                 item {
                     DeviceManagementInfo(
-                        canManageDevice = canManageDevice,
+                        canManageDevice = canManageSelectedDevice,
                         canConfigureWifi = canConfigureWifi,
                     )
                 }
@@ -471,7 +467,7 @@ private fun ExpandedDeviceManagementContent(
                         onRelease = { onRelease(selectedDevice.id) },
                         onConfigureWifi = { onConfigureWifi(selectedDevice.id) },
                         canConfigureWifi = canConfigureWifi,
-                        canReleaseDevice = canManageDevice,
+                        canReleaseDevice = canManageSelectedDevice,
                     )
                 }
             }
@@ -1044,6 +1040,12 @@ private fun SmartDevice.belongsTo(userId: String): Boolean {
     return normalizedUserId.isNotBlank() &&
         (ownerUserId.trim() == normalizedUserId || pairedUserId?.trim() == normalizedUserId)
 }
+
+private fun SmartDevice.hasViewerAccess(): Boolean =
+    accessLevel.equals("viewer", ignoreCase = true) || hasManagerAccess()
+
+private fun SmartDevice.hasManagerAccess(): Boolean =
+    accessLevel.equals("manager", ignoreCase = true)
 
 @Composable
 private fun SectionHeading(text: String) {

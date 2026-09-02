@@ -38,6 +38,7 @@ const { createStorageMetadataRepository } = require("./storageMetadataRepository
 const { createStaffInvitationRepository } = require("./staffInvitationRepository");
 const { createSupportTicketRepository } = require("./supportTicketRepository");
 const { createRoleRequestDocumentRepository } = require("./roleRequestDocumentRepository");
+const { createDeviceAccessRepository } = require("./deviceAccessRepository");
 const { createAvatarMutationRepository } = require("./avatarMutationRepository");
 const { createWorkspaceLifecycleRepository } = require("./workspaceLifecycleRepository");
 const { normalizeWorkspaceCreate, publicWorkspaceLifecycle } = require("./workspaceLifecycleContract");
@@ -1193,6 +1194,13 @@ function createRepositories(options) {
     getPool,
   });
   const roleRequestDocuments = createRoleRequestDocumentRepository({
+    getDb,
+    saveDb,
+    createId,
+    nowIso,
+    getPool,
+  });
+  const deviceAccess = createDeviceAccessRepository({
     getDb,
     saveDb,
     createId,
@@ -20763,6 +20771,8 @@ function createRepositories(options) {
       Object.assign(counts, roleRequestDocumentCounts);
       const avatarMutationCounts = await avatarMutations.hydrate();
       Object.assign(counts, avatarMutationCounts);
+      const deviceAccessCounts = await deviceAccess.hydrate();
+      Object.assign(counts, deviceAccessCounts);
       const activeCredentials = new Map(
         (db.twoFactorCredentials || [])
           .filter((credential) => credential && !credential.disabledAt)
@@ -20789,6 +20799,7 @@ function createRepositories(options) {
     supportTickets,
     roleRequestDocuments,
     avatarMutations,
+    deviceAccess,
     workspaceLifecycle,
     authSessions,
     identityOperations,

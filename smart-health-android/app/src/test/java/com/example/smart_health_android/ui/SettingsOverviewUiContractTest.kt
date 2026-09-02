@@ -45,7 +45,7 @@ class SettingsOverviewUiContractTest {
         assertTrue(appNavGraph.contains("invalidateExpectedAuthority"))
         assertTrue(appNavGraph.contains("authorityStore.invalidateIfCurrent(settingsAuthorityOwner)"))
         assertTrue(appNavGraph.contains("canManageFamilyProfiles"))
-        assertTrue(appNavGraph.contains("canManageStethoscope"))
+        assertTrue(appNavGraph.contains("canAccessStethoscope"))
         assertTrue(appNavGraph.contains("canViewAiCalibration"))
         assertTrue(appNavGraph.contains("canViewDataStorage"))
         assertTrue(appNavGraph.contains("SettingsLogoutCoordinator("))

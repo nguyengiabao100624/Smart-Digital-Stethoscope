@@ -108,7 +108,7 @@ fun StethoscopeSettingsScreen(
                 StethoscopeSettingsLoadState.Empty -> ShcareEmptyState(
                     title = stringResource(R.string.stethoscope_empty_title),
                     message =
-                        "Nhập Device ID của thiết bị đã được công ty gán cho tài khoản. " +
+                        "Nhập mã truy cập hoặc quét QR do Platform Admin cấp. " +
                             "Kết nối Wi-Fi nằm trong phần cài đặt của từng thiết bị.",
                     actionLabel = stringResource(R.string.stethoscope_pair_device),
                     onAction = onNavigateToDevicePairing,

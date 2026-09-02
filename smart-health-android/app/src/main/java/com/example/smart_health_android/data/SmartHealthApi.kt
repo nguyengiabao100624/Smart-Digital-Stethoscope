@@ -1130,6 +1130,54 @@ class SmartHealthApi(
             .map(::parseSmartDevice)
     }
 
+    suspend fun redeemDeviceAccess(
+        code: String,
+        idempotencyKey: String,
+    ): DeviceAccessRedeemResponse = withContext(Dispatchers.IO) {
+        require(code.isNotBlank()) { "Device access code is required" }
+        require(idempotencyKey.isNotBlank()) { "Idempotency-Key is required" }
+        val json = postJson(
+            "$baseUrl/devices/access/redeem",
+            JSONObject().put("code", code),
+            idempotencyKey,
+        )
+        val deviceJson = json.optJSONObject("device")
+            ?: invalidDeviceAccessRedeemContract("Missing device")
+        val grantJson = json.optJSONObject("grant")
+            ?: invalidDeviceAccessRedeemContract("Missing access grant")
+        val device = parseSmartDevice(deviceJson)
+        val accessLevel = DeviceAccessLevel.fromWireValue(grantJson.optString("accessLevel"))
+            ?: invalidDeviceAccessRedeemContract("Unsupported access level")
+        val grant = DeviceAccessGrant(
+            id = grantJson.optString("id").trim(),
+            deviceId = grantJson.optString("deviceId").trim(),
+            organizationId = grantJson.optString("organizationId").trim(),
+            userId = grantJson.optString("userId").trim(),
+            accessLevel = accessLevel,
+            status = grantJson.optString("status").trim(),
+            grantedAt = grantJson.optString("grantedAt").trim(),
+        )
+        if (
+            grant.id.isBlank() ||
+            grant.deviceId.isBlank() ||
+            grant.organizationId.isBlank() ||
+            grant.userId.isBlank() ||
+            grant.status != "active" ||
+            grant.grantedAt.isBlank() ||
+            device.id != grant.deviceId ||
+            device.organizationId != grant.organizationId ||
+            device.accessLevel != grant.accessLevel.wireValue ||
+            device.accessGrantId != grant.id
+        ) {
+            invalidDeviceAccessRedeemContract("Device and grant identities disagree")
+        }
+        DeviceAccessRedeemResponse(
+            device = device,
+            grant = grant,
+            idempotent = json.optBoolean("idempotent", false),
+        )
+    }
+
     suspend fun getDevice(id: String): SmartDevice = withContext(Dispatchers.IO) {
         parseSmartDevice(getJson("$baseUrl/devices/${id.urlEncode()}").getJSONObject("device"))
     }
@@ -4283,6 +4331,8 @@ class SmartHealthApi(
             organizationId = json.exactStringOrNull("organizationId").orEmpty(),
             ownerUserId = json.exactStringOrNull("ownerUserId").orEmpty(),
             assignedPatientId = json.exactStringOrNull("assignedPatientId").orEmpty(),
+            accessLevel = json.exactStringOrNull("accessLevel").orEmpty(),
+            accessGrantId = json.exactStringOrNull("accessGrantId").orEmpty(),
             firmwareVersion = json.optString("firmwareVersion"),
             otaStatus = json.optString("otaStatus"),
             audioStatus = json.optString("audioStatus"),
@@ -4292,6 +4342,14 @@ class SmartHealthApi(
                 ?: SmartDeviceTelemetry(),
             lastSeenAt = json.stringOrNull("lastSeenAt"),
             updatedAt = json.stringOrNull("updatedAt")
+        )
+    }
+
+    private fun invalidDeviceAccessRedeemContract(reason: String): Nothing {
+        throw SmartHealthApiException(
+            statusCode = 502,
+            code = "DEVICE_ACCESS_REDEEM_RESPONSE_INVALID",
+            message = "Backend returned an invalid device access receipt: $reason",
         )
     }
 

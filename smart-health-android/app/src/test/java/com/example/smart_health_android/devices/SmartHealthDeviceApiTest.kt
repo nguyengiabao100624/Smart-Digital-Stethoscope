@@ -4,6 +4,7 @@ import com.example.smart_health_android.data.SmartHealthApi
 import com.example.smart_health_android.data.SmartHealthApiException
 import com.example.smart_health_android.data.DevicePairingOutcome
 import com.example.smart_health_android.data.DevicePairingPresence
+import com.example.smart_health_android.data.DeviceAccessLevel
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -53,6 +54,95 @@ class SmartHealthDeviceApiTest {
         val device = api.listDevices().single()
 
         assertFalse(device.online)
+    }
+
+    @Test
+    fun redeemAccessCodeSendsNoDeviceIdentityAndRequiresAConsistentGrant() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """
+                    {
+                      "device": {
+                        "id": "device-1",
+                        "name": "Shcare One",
+                        "organizationId": "workspace-1",
+                        "accessLevel": "viewer",
+                        "accessGrantId": "grant-1"
+                      },
+                      "grant": {
+                        "id": "grant-1",
+                        "deviceId": "device-1",
+                        "organizationId": "workspace-1",
+                        "userId": "doctor-1",
+                        "accessLevel": "viewer",
+                        "status": "active",
+                        "grantedAt": "2026-09-02T10:00:00.000Z"
+                      },
+                      "idempotent": false
+                    }
+                    """.trimIndent(),
+                ),
+        )
+
+        val response = api.redeemDeviceAccess(
+            code = "SHC-ABCD-EFGH-JKLM-NPQR",
+            idempotencyKey = "access-intent-1",
+        )
+        val request = server.takeRequest()
+        val body = JSONObject(request.body.readUtf8())
+
+        assertEquals("POST", request.method)
+        assertEquals("/api/v1/devices/access/redeem", request.path)
+        assertEquals("access-intent-1", request.getHeader("Idempotency-Key"))
+        assertEquals(setOf("code"), body.keys().asSequence().toSet())
+        assertEquals(DeviceAccessLevel.Viewer, response.grant.accessLevel)
+        assertEquals("device-1", response.device.id)
+        assertEquals("viewer", response.device.accessLevel)
+    }
+
+    @Test
+    fun redeemAccessCodeRejectsCrossDeviceContractDrift() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """
+                    {
+                      "device": {
+                        "id": "device-other",
+                        "organizationId": "workspace-1",
+                        "accessLevel": "manager",
+                        "accessGrantId": "grant-1"
+                      },
+                      "grant": {
+                        "id": "grant-1",
+                        "deviceId": "device-1",
+                        "organizationId": "workspace-1",
+                        "userId": "doctor-1",
+                        "accessLevel": "manager",
+                        "status": "active",
+                        "grantedAt": "2026-09-02T10:00:00.000Z"
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+        )
+
+        val error = assertThrows(SmartHealthApiException::class.java) {
+            runBlocking {
+                api.redeemDeviceAccess(
+                    code = "SHC-RSTU-VWXY-2345-6789",
+                    idempotencyKey = "access-intent-2",
+                )
+            }
+        }
+
+        assertEquals(502, error.statusCode)
+        assertEquals("DEVICE_ACCESS_REDEEM_RESPONSE_INVALID", error.code)
     }
 
     @Test

@@ -2,6 +2,13 @@
 
 Last updated: 2026-09-02
 
+## 2026-09-02 device access code/QR candidate checkpoint
+
+- The user-facing device enrollment contract is now one opaque, one-time Platform Admin code: `SHC-XXXX-XXXX-XXXX-XXXX`, or its canonical QR `shcare://device-access?v=1&code=...`. Android and Portal no longer ask a doctor/patient for a raw Device ID. The older factory claim/Device ID APIs remain an internal factory-compatibility path and are not a user entry point.
+- Platform Admin creates the code for one exact device and chooses `viewer` (view + Wi-Fi provisioning) or `manager` (manage that device). Neither scope grants Platform Admin or cross-device authority. Admin can list/revoke pending codes and active grants.
+- Migration `058_device_access_invites.sql` stores only the code hash plus tenant/device/scope/expiry/audit bindings. Redeem is single-user replay-safe, tenant-exact, rejects expired/revoked/foreign-device codes, and cannot revive a revoked manager grant through a viewer code.
+- Candidate gates PASS locally: device-access `12/12`; backend device-security `87/87` when run serially; Admin contracts `208/208` plus lint/Firebase build; Portal auth/contracts plus lint/build; Android unit/lint/assemble. Production deployment, live mutation cleanup and Xiaomi visual smoke are still required before this slice is marked LIVE.
+
 ## 2026-09-02 final cloud mutation and live device-assignment checkpoint
 
 - At verification time Render was healthy on backend implementation marker `git-73669c92fadd` at `https://shcare-api-prod.onrender.com`; later documentation-only commits do not change that runtime implementation. The production fix series is `fd35db18` (nullable device timestamps), `c80fb6f6` (nullable device ownership references), `a932bdfe` (patient-share references) and `73669c92` (system-wide optional relationship normalization).

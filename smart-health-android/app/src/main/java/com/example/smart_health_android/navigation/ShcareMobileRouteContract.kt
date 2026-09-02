@@ -159,25 +159,21 @@ enum class ShcareMobileRoute(
         routePattern = "device-pairing?returnRoute={returnRoute}",
         testTag = "route.device-pairing",
         sessionRequirement = MobileRouteSessionRequirement.Authenticated,
-        anyOfCapabilities = MobileRouteCapabilities.DeviceManage,
     ),
     DeviceWifiSetup(
         routePattern = "device-wifi/{deviceId}",
         testTag = "route.device-wifi",
         sessionRequirement = MobileRouteSessionRequirement.Authenticated,
-        anyOfCapabilities = MobileRouteCapabilities.Devices,
     ),
     LegacyBluetoothPairing(
         routePattern = "bluetooth?returnRoute={returnRoute}",
         testTag = "route.legacy-bluetooth-pairing",
         sessionRequirement = MobileRouteSessionRequirement.Authenticated,
-        anyOfCapabilities = MobileRouteCapabilities.DeviceManage,
     ),
     ConnectionSuccess(
         routePattern = "connection-success/{deviceName}?returnRoute={returnRoute}",
         testTag = "route.connection-success",
         sessionRequirement = MobileRouteSessionRequirement.Authenticated,
-        anyOfCapabilities = MobileRouteCapabilities.Devices,
     ),
     Records(
         routePattern = "records",
@@ -237,7 +233,6 @@ enum class ShcareMobileRoute(
         routePattern = "stethoscope-settings",
         testTag = "route.stethoscope-settings",
         sessionRequirement = MobileRouteSessionRequirement.Authenticated,
-        anyOfCapabilities = MobileRouteCapabilities.DeviceManage,
     ),
     AiCalibration(
         routePattern = "ai-calibration",
@@ -276,7 +271,6 @@ enum class ShcareMobileRoute(
         routePattern = "device-management?deviceId={deviceId}",
         testTag = "route.device-management",
         sessionRequirement = MobileRouteSessionRequirement.Authenticated,
-        anyOfCapabilities = MobileRouteCapabilities.Devices,
     ),
     /**
      * Compatibility route for old notifications and deep links. New navigation must use
@@ -286,7 +280,6 @@ enum class ShcareMobileRoute(
         routePattern = "bluetooth-settings?deviceId={deviceId}",
         testTag = "route.legacy-bluetooth-settings",
         sessionRequirement = MobileRouteSessionRequirement.Authenticated,
-        anyOfCapabilities = MobileRouteCapabilities.Devices,
     ),
     ExportData(
         routePattern = "export-data",

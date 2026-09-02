@@ -2,6 +2,13 @@
 
 Last updated: 2026-09-02
 
+## 2026-09-02 exact-device access code and QR
+
+- **PASS/SOURCE - contract:** Platform Admin creates one-time `viewer` or `manager` access for one exact device. QR contains only the opaque code; Device ID, device secret, tenant identifier and credentials are absent.
+- **PASS/SOURCE - backend/security:** migration `058`, PostgreSQL/JSON parity, audited create/redeem/revoke, exact tenant/device binding, same-user replay, expiry, single-use and revoked-device checks are implemented. A revoked manager cannot be silently restored by redeeming a viewer code.
+- **PASS/SOURCE - clients:** Admin creates/downloads/revokes code/QR; Portal and Android accept only a code/QR and validate the exact returned user/workspace/device/grant receipt. Viewer can open Wi-Fi provisioning; manager can operate only that device; Platform Admin authority is never delegated.
+- **PASS/LOCAL GATES:** device-access `12/12`; device-security `87/87` serial; Admin `208/208` plus lint/build; Portal auth/contracts plus lint/build; Android unit/lint/assemble. **PENDING/LIVE:** deploy migration/backend/Admin/Portal, run authenticated production create/redeem/revoke cleanup and install/smoke the candidate APK on Xiaomi.
+
 ## 2026-09-02 production cloud closure and remaining hardware boundary
 
 - **PASS/LIVE - backend:** Render served backend implementation marker `git-73669c92fadd` during final mutation verification; later documentation-only commits do not change that runtime implementation. Nullable timestamp and foreign-key persistence is normalized for devices, users, workspaces, patients, appointments, shares, claims, scans, commands, notifications and exports; repository, workspace-access, syntax and device-security `86/86` gates PASS.

@@ -525,7 +525,7 @@
     <string name="device_management_add">Thêm thiết bị</string>
     <string name="device_management_loading">Đang tải trạng thái thiết bị từ máy chủ</string>
     <string name="device_management_empty_title">Chưa có thiết bị đã ghép</string>
-    <string name="device_management_empty_message">Nhập Device ID của thiết bị công ty đã gán cho tài khoản để bắt đầu.</string>
+    <string name="device_management_empty_message">Nhập mã truy cập hoặc quét QR do quản trị viên cấp để thêm thiết bị.</string>
     <string name="device_management_offline_title">Không thể tải trạng thái thiết bị</string>
     <string name="device_management_offline_message">Kiểm tra kết nối mạng rồi thử lại. Shcare không hiển thị trạng thái dựng thay cho dữ liệu máy chủ.</string>
     <string name="device_management_error_title">Chưa tải được trạng thái thiết bị</string>
@@ -545,11 +545,34 @@
     <string name="device_management_release_title">Gỡ thiết bị khỏi tài khoản?</string>
     <string name="device_management_release_message">%1$s sẽ được gỡ khỏi tài khoản sau khi máy chủ xác nhận. Lịch sử khám và dữ liệu y tế vẫn được lưu an toàn; thiết bị vật lý không bị xóa hay thu hồi.</string>
     <string name="device_management_cancel">Hủy</string>
-    <string name="device_management_info">Nhập Device ID để thêm thiết bị đã được công ty gán. Trong Kết nối Wi-Fi, Shcare phát cấu hình bằng ESPTouch V2 và xác nhận đúng thiết bị trực tuyến qua hệ thống.</string>
-    <string name="device_management_read_only_info">Bạn có thể xem trạng thái và dữ liệu kỹ thuật của thiết bị được phân công. Quản trị viên workspace quản lý Wi-Fi và liên kết thiết bị.</string>
-    <string name="device_management_assigned_info">Bạn có thể xem trạng thái và kết nối Wi-Fi cho thiết bị được phân công. Quản trị viên workspace quản lý việc thêm, gỡ hoặc chuyển thiết bị.</string>
-    <string name="device_management_empty_read_only_message">Chưa có thiết bị nào được phân công cho tài khoản này. Hãy liên hệ quản trị viên workspace.</string>
+    <string name="device_management_info">Dùng mã truy cập hoặc QR do Platform Admin cấp để thêm thiết bị. Quyền xem, kết nối Wi-Fi hay quản lý được máy chủ giới hạn riêng cho từng thiết bị.</string>
+    <string name="device_management_read_only_info">Mã hiện tại cho phép xem trạng thái thiết bị. Hãy dùng mã “Xem &amp; kết nối Wi-Fi” hoặc “Quản lý thiết bị” nếu cần cấu hình Wi-Fi.</string>
+    <string name="device_management_assigned_info">Bạn có thể xem trạng thái và kết nối Wi-Fi cho thiết bị này. Chỉ mã “Quản lý thiết bị” mới cho phép chỉnh sửa hoặc gỡ liên kết.</string>
+    <string name="device_management_empty_read_only_message">Chưa có thiết bị nào. Hãy nhập mã truy cập hoặc quét QR do quản trị viên cấp.</string>
     <string name="device_management_unknown_device">Thiết bị Shcare</string>
+
+    <string name="device_access_title">Thêm thiết bị</string>
+    <string name="device_access_back">Quay lại</string>
+    <string name="device_access_heading">Nhập mã truy cập thiết bị</string>
+    <string name="device_access_description">Mã do Platform Admin tạo và xác định đúng thiết bị cùng phạm vi quyền của bạn. Bạn không cần nhập Device ID.</string>
+    <string name="device_access_code_label">Mã truy cập</string>
+    <string name="device_access_code_placeholder">SHC-XXXX-XXXX-XXXX-XXXX</string>
+    <string name="device_access_code_support">Bạn có thể nhập mã hoặc quét QR. Mỗi mã chỉ được dùng một lần và có thời hạn.</string>
+    <string name="device_access_scan_qr">Quét QR</string>
+    <string name="device_access_submit">Thêm thiết bị</string>
+    <string name="device_access_submitting">Đang xác nhận với máy chủ…</string>
+    <string name="device_access_security_title">Quyền được cấp theo mã</string>
+    <string name="device_access_security_message">“Xem &amp; kết nối Wi-Fi” không cho phép chỉnh sửa hoặc gỡ thiết bị. “Quản lý thiết bị” cho phép điều chỉnh đúng thiết bị này nhưng không cấp quyền quản trị hệ thống.</string>
+    <string name="device_access_scan_cancelled">Đã đóng trình quét QR.</string>
+    <string name="device_access_scan_failed">Không thể mở trình quét QR. Bạn vẫn có thể nhập mã thủ công.</string>
+    <string name="device_access_code_invalid">Mã truy cập hoặc QR không đúng định dạng.</string>
+    <string name="device_access_code_used">Mã này đã được một tài khoản khác sử dụng.</string>
+    <string name="device_access_code_expired">Mã đã hết hạn hoặc bị thu hồi. Hãy xin quản trị viên tạo mã mới.</string>
+    <string name="device_access_code_invalid_or_forbidden">Mã không hợp lệ hoặc không thuộc workspace đang chọn.</string>
+    <string name="device_access_offline">Không thể kết nối máy chủ. Kiểm tra mạng rồi thử lại.</string>
+    <string name="device_access_backend_error">Máy chủ chưa xác nhận quyền truy cập thiết bị. Chưa có thay đổi nào được lưu.</string>
+    <string name="device_access_session_expired">Phiên đăng nhập đã thay đổi hoặc hết hạn. Hãy đăng nhập lại rồi thử tiếp.</string>
+    <string name="device_access_request_id">Mã yêu cầu: %1$s</string>
 
     <string name="device_presence_online">Đã xác nhận online</string>
     <string name="device_presence_degraded">Online, cần kiểm tra</string>
@@ -1022,7 +1045,7 @@
     <string name="patient_dashboard_device_title">Thiết bị của hồ sơ</string>
     <string name="patient_dashboard_device_unavailable">Trạng thái thiết bị chưa khả dụng theo quyền hiện tại.</string>
     <string name="patient_dashboard_device_unpaired">Chưa ghép thiết bị</string>
-    <string name="patient_dashboard_device_unpaired_message">Thêm thiết bị bằng Device ID do công ty gán để bắt đầu quy trình đo an toàn.</string>
+    <string name="patient_dashboard_device_unpaired_message">Nhập hoặc quét mã truy cập do Platform Admin cấp để thêm thiết bị và nhận đúng phạm vi quyền.</string>
     <string name="patient_dashboard_pair_device">Thêm thiết bị</string>
     <string name="patient_dashboard_manage_device">Xem thông tin và cài đặt thiết bị</string>
     <string name="patient_dashboard_device_online">Đang trực tuyến</string>

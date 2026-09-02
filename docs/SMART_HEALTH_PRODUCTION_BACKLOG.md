@@ -2,6 +2,16 @@
 
 Last updated: 2026-09-02
 
+## 2026-09-02 exact-device access code/QR promotion
+
+- [x] Replace the user-facing Device ID/factory claim form with a Platform Admin-created one-time access code and QR.
+- [x] Support two exact-device scopes: `viewer` = view + Wi-Fi provisioning; `manager` = manage that device, never Platform Admin.
+- [x] Add migration `058`, code-hash-only storage, tenant/device binding, audited create/redeem/revoke, expiry/single-use/replay behavior and SQL/JSON parity.
+- [x] Add Admin creation/QR download/history/revoke UI, Portal code redemption and Android code/Google QR Scanner redemption with authority-change teardown.
+- [x] Pass local security/build gates: access `12/12`, device security `87/87` serial, Admin `208/208`, Portal auth/contracts, Android unit/lint/assemble.
+- [ ] Push the candidate, wait for the exact Render marker and migration `058`, deploy both Firebase sites, run authenticated production create -> redeem -> viewer/manager negative -> revoke -> cleanup smoke, then install and visually smoke the APK on Xiaomi.
+- [ ] Keep the older factory provisioning claim path internal-only until a separate deprecation migration proves no enrolled factory inventory still depends on it.
+
 ## 2026-09-02 authoritative final cloud checkpoint
 
 - [x] Deploy and verify Render marker `git-73669c92fadd`; normalize nullable timestamps and optional relationship identifiers so PostgreSQL never receives empty-string timestamps or foreign keys.

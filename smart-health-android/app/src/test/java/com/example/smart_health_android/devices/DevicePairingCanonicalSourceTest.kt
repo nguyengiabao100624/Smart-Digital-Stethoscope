@@ -16,6 +16,11 @@ class DevicePairingCanonicalSourceTest {
         ).readText()
     private val canonicalPairing =
         mainScreens.resolve("DevicePairingScreen.kt").readText()
+    private val accessRedeemScreen =
+        mainScreens.resolve("DeviceAccessRedeemScreen.kt").readText()
+    private val accessRedeemViewModel =
+        appRoot.resolve("src/main/java/com/example/smart_health_android/devices/DeviceAccessRedeemViewModel.kt")
+            .readText()
     private val pairingViewModel =
         appRoot.resolve("src/main/java/com/example/smart_health_android/devices/DevicePairingViewModel.kt")
             .readText()
@@ -29,7 +34,7 @@ class DevicePairingCanonicalSourceTest {
         .readText()
 
     @Test
-    fun productionSourceContainsOnlyTheDeviceIdAndEspTouchProvisioningFlow() {
+    fun productionSourceUsesOnlyAnAccessCodeForAttachmentAndEspTouchForWifi() {
         assertFalse(mainScreens.resolve("BluetoothPairingScreen.kt").exists())
         assertFalse(navGraph.contains("BluetoothPairingScreen("))
         assertTrue(navGraph.contains("route = \"bluetooth?returnRoute={returnRoute}\""))
@@ -37,11 +42,21 @@ class DevicePairingCanonicalSourceTest {
         assertTrue(navGraph.contains("onWifiConfigured = { deviceName ->"))
         assertTrue(navGraph.contains("\"connection-success/${'$'}{Uri.encode(deviceName)}\""))
         assertTrue(
-            Regex("""\bDevicePairingScreen\(""")
+            Regex("""\bDeviceAccessRedeemScreen\(""")
                 .findAll(navGraph)
                 .count() >= 2,
         )
+        assertFalse(navGraph.contains("onDeviceRegistered ="))
+        assertTrue(accessRedeemScreen.contains("device_access.entry"))
+        assertTrue(accessRedeemScreen.contains("device_access.code"))
+        assertTrue(accessRedeemScreen.contains("device_access.scan_qr"))
+        assertTrue(accessRedeemScreen.contains("device_access.submit"))
+        assertFalse(accessRedeemScreen.contains("Device ID"))
+        assertTrue(accessRedeemViewModel.contains("redeemDeviceAccess"))
+        assertTrue(accessRedeemViewModel.contains("parseDeviceAccessCode"))
 
+        // DevicePairingScreen remains the Wi-Fi provisioning host used by
+        // DeviceWifiSetupScreen; it is no longer an attachment entry point.
         assertTrue(canonicalPairing.contains("DevicePairingUiAction.ManualDeviceIdChanged"))
         assertTrue(canonicalPairing.contains("DevicePairingUiAction.SubmitManual"))
         assertTrue(canonicalPairing.contains("DevicePairingUiAction.OpenWifiSetup"))

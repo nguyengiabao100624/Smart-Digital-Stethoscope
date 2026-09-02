@@ -738,7 +738,6 @@ private fun PatientDashboardDeviceSection(
         )
 
         PatientDashboardSectionState.Empty -> PatientDashboardUnpairedDeviceCard(
-            canManageDevice = state.features.canManageDevice,
             onNavigateToDevicePairing = onNavigateToDevicePairing,
         )
 
@@ -746,13 +745,11 @@ private fun PatientDashboardDeviceSection(
             val device = state.device
             if (device == null) {
                 PatientDashboardUnpairedDeviceCard(
-                    canManageDevice = state.features.canManageDevice,
                     onNavigateToDevicePairing = onNavigateToDevicePairing,
                 )
             } else {
                 PatientDashboardDeviceCard(
                     device = device,
-                    canManageDevice = state.features.canManageDevice,
                     onNavigateToDeviceManagement = onNavigateToDeviceManagement,
                 )
             }
@@ -763,7 +760,6 @@ private fun PatientDashboardDeviceSection(
 @Composable
 private fun PatientDashboardDeviceCard(
     device: PatientDashboardDevice,
-    canManageDevice: Boolean,
     onNavigateToDeviceManagement: (String) -> Unit,
 ) {
     val isOnline = device.presence == PatientDashboardDevicePresence.Online
@@ -813,16 +809,11 @@ private fun PatientDashboardDeviceCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(
-                enabled = canManageDevice,
                 role = Role.Button,
                 onClick = { onNavigateToDeviceManagement(device.id) },
             )
             .semantics(mergeDescendants = true) {
-                contentDescription = if (canManageDevice) {
-                    "$spokenState. $manageDescription"
-                } else {
-                    spokenState
-                }
+                contentDescription = "$spokenState. $manageDescription"
             }
             .testTag("patient-dashboard.device"),
     ) {
@@ -876,12 +867,10 @@ private fun PatientDashboardDeviceCard(
                         },
                     )
                 }
-                if (canManageDevice) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                    )
-                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                )
             }
 
             device.batteryPercent?.let { batteryPercent ->
@@ -956,7 +945,6 @@ private fun PatientDashboardDeviceCard(
 
 @Composable
 private fun PatientDashboardUnpairedDeviceCard(
-    canManageDevice: Boolean,
     onNavigateToDevicePairing: () -> Unit,
 ) {
     Card(
@@ -984,16 +972,14 @@ private fun PatientDashboardUnpairedDeviceCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (canManageDevice) {
-                FilledTonalButton(
-                    onClick = onNavigateToDevicePairing,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .testTag("patient-dashboard.device.pair"),
-                ) {
-                    Text(stringResource(R.string.patient_dashboard_pair_device))
-                }
+            FilledTonalButton(
+                onClick = onNavigateToDevicePairing,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .testTag("patient-dashboard.device.pair"),
+            ) {
+                Text(stringResource(R.string.patient_dashboard_pair_device))
             }
         }
     }

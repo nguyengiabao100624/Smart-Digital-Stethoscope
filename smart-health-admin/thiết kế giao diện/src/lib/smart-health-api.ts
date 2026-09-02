@@ -449,6 +449,39 @@ export type SmartHealthDeviceProvisionResponse = {
   idempotent?: boolean;
 };
 
+export type SmartHealthDeviceAccessLevel = "viewer" | "manager";
+
+export type SmartHealthDeviceAccessInvite = {
+  id: string;
+  deviceId: string;
+  organizationId: string;
+  accessLevel: SmartHealthDeviceAccessLevel;
+  status: "active" | "redeemed" | "revoked" | "expired";
+  expiresAt: string;
+  redeemedAt?: string | null;
+  redeemedByUserId?: string | null;
+  revokedAt?: string | null;
+  createdAt: string;
+};
+
+export type SmartHealthDeviceAccessGrant = {
+  id: string;
+  deviceId: string;
+  organizationId: string;
+  userId: string;
+  accessLevel: SmartHealthDeviceAccessLevel;
+  status: "active" | "revoked";
+  grantedAt: string;
+  revokedAt?: string | null;
+};
+
+export type SmartHealthDeviceAccessInviteCreation = {
+  invite: SmartHealthDeviceAccessInvite;
+  code: string;
+  qrPayload: string;
+  idempotent?: boolean;
+};
+
 export type SmartHealthDeviceCommandState =
   | "accepted"
   | "queued"
@@ -1973,6 +2006,42 @@ export const smartHealthApi = {
         headers: { "Idempotency-Key": idempotencyKey },
         body: JSON.stringify(assignment),
       },
+    );
+  },
+
+  async listDeviceAccess(deviceId: string) {
+    return requestJson<{
+      invites: SmartHealthDeviceAccessInvite[];
+      grants: SmartHealthDeviceAccessGrant[];
+    }>(`/devices/${encodeURIComponent(deviceId)}/access-invites`);
+  },
+
+  async createDeviceAccessInvite(
+    deviceId: string,
+    payload: { accessLevel: SmartHealthDeviceAccessLevel; expiresInHours: number },
+    idempotencyKey: string,
+  ) {
+    return requestJson<SmartHealthDeviceAccessInviteCreation>(
+      `/devices/${encodeURIComponent(deviceId)}/access-invites`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  async revokeDeviceAccessInvite(deviceId: string, inviteId: string) {
+    return requestJson<{ invite: SmartHealthDeviceAccessInvite }>(
+      `/devices/${encodeURIComponent(deviceId)}/access-invites/${encodeURIComponent(inviteId)}`,
+      { method: "DELETE" },
+    );
+  },
+
+  async revokeDeviceAccessGrant(deviceId: string, grantId: string) {
+    return requestJson<{ grant: SmartHealthDeviceAccessGrant }>(
+      `/devices/${encodeURIComponent(deviceId)}/access-grants/${encodeURIComponent(grantId)}`,
+      { method: "DELETE" },
     );
   },
 

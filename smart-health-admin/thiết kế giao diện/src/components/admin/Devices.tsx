@@ -28,6 +28,7 @@ import { ActivateDeviceDialog } from "./dialogs/ActivateDeviceDialog";
 import { RotateDeviceSecretDialog } from "./dialogs/RotateDeviceSecretDialog";
 import { EditDeviceDialog } from "./dialogs/EditDeviceDialog";
 import { AssignDevicePatientDialog } from "./dialogs/AssignDevicePatientDialog";
+import { DeviceAccessInviteDialog } from "./dialogs/DeviceAccessInviteDialog";
 import { ConfirmActionDialog } from "./ConfirmActionDialog";
 import { PageHeader, StatusBadge, Timeline } from "./design-system";
 import { PaginationFooter } from "./PaginationFooter";
@@ -220,11 +221,6 @@ function formatInventoryDate(value?: string) {
   return new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium" }).format(date);
 }
 
-function isDeviceWaitingForClaim(device: SmartHealthDevice) {
-  if (device.ownershipState) return device.ownershipState === "provisioned";
-  return !device.ownerUserId && !device.pairedUserId && !device.assignedPatientId;
-}
-
 function eventTone(eventType: string): "success" | "warning" | "error" | "primary" | "muted" {
   if (/failed|rejected|error/i.test(eventType)) return "error";
   if (/ota|command|rotate|revoke|unpair/i.test(eventType)) return "warning";
@@ -260,7 +256,7 @@ export function Devices() {
   const [backendError, setBackendError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [claimDevice, setClaimDevice] = useState<SmartHealthDevice | null>(null);
+  const [accessInviteDevice, setAccessInviteDevice] = useState<SmartHealthDevice | null>(null);
   const [activateDialogOpen, setActivateDialogOpen] = useState(false);
   const [rotateSecretDevice, setRotateSecretDevice] = useState<SmartHealthDevice | null>(null);
   const [editingDevice, setEditingDevice] = useState<SmartHealthDevice | null>(null);
@@ -1717,21 +1713,12 @@ export function Devices() {
                     </button>
                     {isPlatformAdmin ? (
                       <button
-                        onClick={() => {
-                          if (isDeviceWaitingForClaim(selectedDevice)) {
-                            setClaimDevice(selectedDevice);
-                            return;
-                          }
-                          toast.info("Thiết bị đã được phân công nên không cần claim code.", {
-                            description:
-                              "Tài khoản được Admin cấp trực tiếp chỉ cần nhập Device ID trong App. Muốn bàn giao bằng mã một lần, mở Phân công thiết bị, bỏ tài khoản và bệnh nhân, lưu về kho workspace rồi tạo mã claim.",
-                          });
-                        }}
+                        onClick={() => setAccessInviteDevice(selectedDevice)}
                         disabled={selectedDevice.status === "revoked"}
                         className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <QrCode className="h-3.5 w-3.5" aria-hidden="true" />
-                        Tạo mã claim
+                        Tạo mã/QR truy cập
                       </button>
                     ) : null}
                     <button
@@ -1795,13 +1782,12 @@ export function Devices() {
         onOpenChange={setAddDialogOpen}
         onCreated={loadDevices}
       />
-      <AddDeviceDialog
-        initialDevice={claimDevice}
-        open={isPlatformAdmin && Boolean(claimDevice)}
+      <DeviceAccessInviteDialog
+        device={accessInviteDevice}
+        open={isPlatformAdmin && Boolean(accessInviteDevice)}
         onOpenChange={(open) => {
-          if (!open) setClaimDevice(null);
+          if (!open) setAccessInviteDevice(null);
         }}
-        onCreated={loadDevices}
       />
       <ActivateDeviceDialog
         open={canManageDevices && activateDialogOpen}

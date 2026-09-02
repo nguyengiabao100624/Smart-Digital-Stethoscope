@@ -22,7 +22,7 @@ test("Platform Admin exposes real audited controls for each governed data domain
   assert.match(devices, /<EditDeviceDialog/);
   assert.match(devices, /<AssignDevicePatientDialog/);
   assert.match(devices, /Phân công thiết bị/);
-  assert.match(devices, /Tạo mã claim/);
+  assert.match(devices, /Tạo mã\/QR truy cập/);
   assert.match(accounts, /saveSelected/);
   assert.match(accounts, /askLockToggle/);
   assert.match(accounts, /askDelete/);

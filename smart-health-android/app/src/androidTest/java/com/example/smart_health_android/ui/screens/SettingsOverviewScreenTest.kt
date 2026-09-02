@@ -42,7 +42,7 @@ class SettingsOverviewScreenTest {
         setSettingsContent(
             state = readyState(),
             canManageFamilyProfiles = false,
-            canManageStethoscope = false,
+            canAccessStethoscope = false,
             canViewAiCalibration = false,
             canViewDataStorage = false,
             fontScale = 2f,
@@ -74,7 +74,7 @@ class SettingsOverviewScreenTest {
         setSettingsContent(
             state = readyState(),
             canManageFamilyProfiles = true,
-            canManageStethoscope = true,
+            canAccessStethoscope = true,
             canViewAiCalibration = true,
             canViewDataStorage = true,
         )
@@ -98,7 +98,7 @@ class SettingsOverviewScreenTest {
         setSettingsContent(
             state = readyState(),
             canManageFamilyProfiles = false,
-            canManageStethoscope = false,
+            canAccessStethoscope = false,
             canViewAiCalibration = false,
             canViewDataStorage = false,
         )
@@ -163,7 +163,7 @@ class SettingsOverviewScreenTest {
     private fun setSettingsContent(
         state: SettingsOverviewUiState,
         canManageFamilyProfiles: Boolean = true,
-        canManageStethoscope: Boolean = true,
+        canAccessStethoscope: Boolean = true,
         canViewAiCalibration: Boolean = true,
         canViewDataStorage: Boolean = true,
         fontScale: Float = 1f,
@@ -179,7 +179,7 @@ class SettingsOverviewScreenTest {
                     SettingsOverviewContent(
                         state = state,
                         canManageFamilyProfiles = canManageFamilyProfiles,
-                        canManageStethoscope = canManageStethoscope,
+                        canAccessStethoscope = canAccessStethoscope,
                         canViewAiCalibration = canViewAiCalibration,
                         canViewDataStorage = canViewDataStorage,
                         showBackNavigation = true,

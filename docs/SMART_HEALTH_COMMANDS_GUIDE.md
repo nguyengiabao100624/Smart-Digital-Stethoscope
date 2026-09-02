@@ -26,7 +26,17 @@ curl.exe -sS -D - -o NUL -H "Origin: https://attacker.invalid" https://shcare-ap
 
 The first two origins must be echoed exactly; the untrusted origin must have no `access-control-allow-origin`. Anonymous device-access endpoints must return `401`. The live Admin devices route must load `_admin.devices-CfkQpc1t.js`; the public device page must load `DevicePage-DIt3ny0e.js` and show the one-time access-code wording.
 
-The current debug APK is `smart-health-android/app/build/outputs/apk/debug/app-debug.apk`, `48,687,986` bytes, SHA-256 `9DE036BF7ACB63867135FED20475BDECB7D00D7367766465E7ECC97A02ED1BE6`. Install it only when `adb devices -l` reports the Xiaomi. ADB is currently empty, so do not claim installation or visual/TalkBack proof.
+The current debug APK is `smart-health-android/app/build/outputs/apk/debug/app-debug.apk`, `48,687,986` bytes, SHA-256 `9DE036BF7ACB63867135FED20475BDECB7D00D7367766465E7ECC97A02ED1BE6`. It was installed state-preservingly on Xiaomi `21081111RG` over Wireless ADB and launched successfully. Physical Compose verification:
+
+```powershell
+cd D:\Study\KLTN\smart-health-android
+.\gradlew.bat :app:compileDebugAndroidTestKotlin :app:assembleDebugAndroidTest --console=plain
+adb install -r -t app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
+adb shell am instrument -w -r -e class com.example.smart_health_android.ui.screens.DeviceAccessRedeemScreenTest com.example.smart_health_android.test/androidx.test.runner.AndroidJUnitRunner
+adb uninstall com.example.smart_health_android.test
+```
+
+The recorded run is `OK (1 test)` in `2.345s`. TalkBack was read-only checked and is disabled; do not silently change a user's accessibility settings. COM/serial discovery currently returns no target, so firmware HIL commands must wait for the board to reconnect.
 
 Rotate the exposed Firebase service-account credential safely: provision the replacement in Render and GitHub, deploy and verify both Firebase targets plus provider-dependent operations, and only then revoke the old key. Never paste either key into source, shell output, logs or documentation.
 

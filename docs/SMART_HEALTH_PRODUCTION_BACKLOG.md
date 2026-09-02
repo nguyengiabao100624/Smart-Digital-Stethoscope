@@ -9,9 +9,11 @@ Last updated: 2026-09-03
 - [x] Make Admin and Portal production deployment automatic and path-scoped from `main`; runs `33668876125` and `33668876234` PASS for commit `0ba4aa54`, with CI `33668875574` PASS.
 - [x] Inspect live Admin/Portal assets for the new one-time access-code/QR copy; verify exact CORS for both Firebase origins, no untrusted-origin echo and anonymous API denial `401`.
 - [x] Keep factory Device ID/claim QR internal-only; users receive only the opaque `SHC-...` access code or its QR.
-- [ ] Reconnect Xiaomi over ADB, install APK SHA-256 `9DE036BF7ACB63867135FED20475BDECB7D00D7367766465E7ECC97A02ED1BE6`, then run the device-access visual, lifecycle, font-200% and TalkBack checks. Current `adb devices -l` is empty.
+- [x] Reconnect Xiaomi through Wireless ADB, install APK SHA-256 `9DE036BF7ACB63867135FED20475BDECB7D00D7367766465E7ECC97A02ED1BE6`, launch the real App and verify a clean 1080x2400 surface plus no crash/DNS/SSL/5xx log.
+- [x] Compile/assemble AndroidTest and pass physical `DeviceAccessRedeemScreenTest` `1/1` in `2.345s`: opaque-code normalization, exact device callback, no standalone Device ID input and 48dp scan/submit controls. Remove the test package and relaunch the normal App.
+- [ ] Run the authenticated font-200% and TalkBack sweep when the handset's accessibility service is intentionally enabled. Current read-only status is `accessibility_enabled=0`; do not change a user's accessibility settings silently.
 - [ ] Rotate the exposed Firebase service-account key: create a replacement, update Render and GitHub, deploy/verify both Firebase targets and backend-dependent provider operations, then revoke the old key. Never revoke first.
-- [ ] Complete the physical production chain WSS -> command ACK -> two-source audio-v2 -> durable scan -> signed OTA success -> forced rollback, followed by the bounded Render bandwidth canary. Overall G4 remains **PARTIAL** until these rows pass.
+- [ ] Reconnect the ESP32-S3 serial/COM target, then complete WSS -> command ACK -> two-source audio-v2 -> durable scan -> signed OTA success -> forced rollback, followed by the bounded Render bandwidth canary. Windows currently reports no serial port. Overall G4 remains **PARTIAL** until these rows pass.
 
 ## 2026-09-02 exact-device access code/QR promotion
 

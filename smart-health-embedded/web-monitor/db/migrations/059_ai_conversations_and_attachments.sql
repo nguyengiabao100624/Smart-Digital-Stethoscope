@@ -1,16 +1,49 @@
-CREATE TABLE IF NOT EXISTS ai_conversations (
-  id text PRIMARY KEY,
-  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  organization_id text REFERENCES organizations(id) ON DELETE CASCADE,
-  title text NOT NULL,
-  archived_at timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
+DO $$
+DECLARE
+  relation_owner name;
+BEGIN
+  SELECT tableowner
+  INTO relation_owner
+  FROM pg_tables
+  WHERE schemaname = current_schema()
+    AND tablename = 'ai_conversations';
 
-CREATE INDEX IF NOT EXISTS ai_conversations_scope_updated_idx
-  ON ai_conversations (user_id, organization_id, updated_at DESC)
-  WHERE archived_at IS NULL;
+  IF relation_owner IS NULL THEN
+    CREATE TABLE ai_conversations (
+      id text PRIMARY KEY,
+      user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      organization_id text REFERENCES organizations(id) ON DELETE CASCADE,
+      title text NOT NULL,
+      archived_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX ai_conversations_scope_updated_idx
+      ON ai_conversations (user_id, organization_id, updated_at DESC)
+      WHERE archived_at IS NULL;
+  ELSIF relation_owner = current_user THEN
+    CREATE INDEX IF NOT EXISTS ai_conversations_scope_updated_idx
+      ON ai_conversations (user_id, organization_id, updated_at DESC)
+      WHERE archived_at IS NULL;
+  ELSIF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'ai_conversations'
+      AND column_name = 'organization_id'
+      AND is_nullable = 'YES'
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_indexes
+    WHERE schemaname = current_schema()
+      AND tablename = 'ai_conversations'
+      AND indexname = 'ai_conversations_scope_updated_idx'
+  ) THEN
+    RAISE EXCEPTION
+      'Migration 059 requires the ai_conversations owner to install the complete AI schema before application startup';
+  END IF;
+END
+$$;
 
 -- Supabase can own existing tables with a different role than the Session
 -- Pooler user used by Render. In that topology the owner applies the schema
@@ -53,23 +86,55 @@ BEGIN
 END
 $$;
 
-CREATE TABLE IF NOT EXISTS ai_chat_attachments (
-  id text PRIMARY KEY,
-  conversation_id text NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
-  message_id text REFERENCES chat_messages(id) ON DELETE SET NULL,
-  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  organization_id text REFERENCES organizations(id) ON DELETE CASCADE,
-  name text NOT NULL,
-  content_type text NOT NULL,
-  byte_size bigint NOT NULL CHECK (byte_size > 0 AND byte_size <= 10485760),
-  sha256 text NOT NULL,
-  object_key text NOT NULL UNIQUE,
-  storage_provider text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
+DO $$
+DECLARE
+  relation_owner name;
+BEGIN
+  SELECT tableowner
+  INTO relation_owner
+  FROM pg_tables
+  WHERE schemaname = current_schema()
+    AND tablename = 'ai_chat_attachments';
 
-CREATE INDEX IF NOT EXISTS ai_chat_attachments_scope_conversation_idx
-  ON ai_chat_attachments (user_id, organization_id, conversation_id, created_at ASC);
+  IF relation_owner IS NULL THEN
+    CREATE TABLE ai_chat_attachments (
+      id text PRIMARY KEY,
+      conversation_id text NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+      message_id text REFERENCES chat_messages(id) ON DELETE SET NULL,
+      user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      organization_id text REFERENCES organizations(id) ON DELETE CASCADE,
+      name text NOT NULL,
+      content_type text NOT NULL,
+      byte_size bigint NOT NULL CHECK (byte_size > 0 AND byte_size <= 10485760),
+      sha256 text NOT NULL,
+      object_key text NOT NULL UNIQUE,
+      storage_provider text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE INDEX ai_chat_attachments_scope_conversation_idx
+      ON ai_chat_attachments (user_id, organization_id, conversation_id, created_at ASC);
+  ELSIF relation_owner = current_user THEN
+    CREATE INDEX IF NOT EXISTS ai_chat_attachments_scope_conversation_idx
+      ON ai_chat_attachments (user_id, organization_id, conversation_id, created_at ASC);
+  ELSIF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'ai_chat_attachments'
+      AND column_name = 'organization_id'
+      AND is_nullable = 'YES'
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_indexes
+    WHERE schemaname = current_schema()
+      AND tablename = 'ai_chat_attachments'
+      AND indexname = 'ai_chat_attachments_scope_conversation_idx'
+  ) THEN
+    RAISE EXCEPTION
+      'Migration 059 requires the ai_chat_attachments owner to install the complete AI schema before application startup';
+  END IF;
+END
+$$;
 
 DO $$
 DECLARE

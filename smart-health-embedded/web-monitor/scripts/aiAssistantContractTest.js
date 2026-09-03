@@ -54,8 +54,9 @@ test("AI conversation migration supports personal accounts and locks tables from
   );
   assert.match(migration, /organization_id text REFERENCES organizations\(id\)/);
   assert.doesNotMatch(migration, /organization_id text NOT NULL REFERENCES organizations\(id\)/);
-  assert.match(migration, /ALTER TABLE ai_conversations ENABLE ROW LEVEL SECURITY/);
-  assert.match(migration, /ALTER TABLE ai_chat_attachments ENABLE ROW LEVEL SECURITY/);
-  assert.match(migration, /REVOKE ALL ON TABLE ai_conversations FROM authenticated/);
-  assert.match(migration, /REVOKE ALL ON TABLE ai_chat_attachments FROM authenticated/);
+  assert.match(migration, /FOREACH relation_name IN ARRAY ARRAY\['ai_conversations', 'ai_chat_attachments'\]/);
+  assert.match(migration, /ALTER TABLE %I ENABLE ROW LEVEL SECURITY/);
+  assert.match(migration, /REVOKE ALL ON TABLE %I FROM authenticated/);
+  assert.match(migration, /relation_owner = current_user/);
+  assert.match(migration, /Migration 059 requires the owner of % to enable RLS/);
 });

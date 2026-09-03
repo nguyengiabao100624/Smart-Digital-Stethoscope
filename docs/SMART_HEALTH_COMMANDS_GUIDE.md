@@ -2,6 +2,29 @@
 
 Last updated: 2026-09-03
 
+## 2026-09-03 live audio/AI verification
+
+```powershell
+# Exact backend marker
+Invoke-RestMethod https://shcare-api-prod.onrender.com/api/v1/health
+
+# AI history must fail closed without Firebase authentication
+Invoke-WebRequest https://shcare-api-prod.onrender.com/api/v1/ai/conversations
+
+# Install current product and AI instrumentation artifacts
+adb install -r D:\Study\KLTN\smart-health-android\app\build\outputs\apk\debug\app-debug.apk
+adb install -r D:\Study\KLTN\smart-health-android\app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
+adb shell am instrument -w -r -e class com.example.smart_health_android.ui.screens.AIAssistantScreenTest com.example.smart_health_android.test/androidx.test.runner.AndroidJUnitRunner
+adb uninstall com.example.smart_health_android.test
+adb install -r D:\Study\KLTN\smart-health-android\app\build\outputs\apk\debug\app-debug.apk
+
+# Deploy only the changed Admin target
+cd 'D:\Study\KLTN\smart-health-admin\thiết kế giao diện'
+npx firebase-tools deploy --only hosting:admin --project smart-health-stethoscope --non-interactive
+```
+
+Do not flash the generic firmware merely because COM9 exists. First verify that the external, ignored build configuration carries the exact enrolled Device ID, its matching material, current TLS CA/host and a currently available Wi-Fi path. Never copy those secrets into `platformio.ini`, source, logs or command history.
+
 ## 2026-09-03 audio and AI assistant candidate verification
 
 Backend contract and adjacent regression gates:

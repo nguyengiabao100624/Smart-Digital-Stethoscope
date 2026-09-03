@@ -2,6 +2,14 @@
 
 Last updated: 2026-09-03
 
+## 2026-09-03 audio/AI promotion status
+
+- **PASS/LIVE - backend:** Render health is `git-329c998160ff`; migration `059` completed after its cross-owner Supabase/Session-Pooler path was made idempotent and fail-closed. AI history rejects anonymous access with `401`; CORS allows only Admin and Portal origins.
+- **PASS/LIVE - Admin:** Firebase Hosting version `18711810a882b99b` is released to `shcare-admin.web.app` from the verified 135-file production build.
+- **PASS/DEVICE - Android UI:** exact APK `B079E29...0A881` installed on Xiaomi `21081111RG`; `AIAssistantScreenTest` passes `1/1` physically at 200% font. Normal App relaunch is crash/DNS/TLS clean. **OPEN/AUTHENTICATED DEVICE:** reinstall cleared the login state, so real patient/doctor history, permission prompt, STT transcript review, attachment picker and provider response are not yet claimed.
+- **PASS/READ-ONLY HARDWARE, OPEN/END-TO-END:** COM9 is CH343; boot reports ESPTouch V2 and active dual I2S slots. Saved Wi-Fi `Louisnguyen` is not visible (`201 NO_AP_FOUND`), leaving WSS and audio transport disabled. The new firmware is not flashed because no matching secure factory/HIL material and current CA input are available; the old local HIL header must not be treated as a production identity.
+- **OPEN/PROVIDER:** `AI_PROVIDER_ENDPOINT`, `AI_PROVIDER_API_KEY` and `AI_PROVIDER_MODEL` are intentionally unset. Shcare reports unavailable instead of generating fake medical advice.
+
 ## 2026-09-03 audio and AI assistant implementation status
 
 - **PASS/SOURCE - audio:** backend recording commands carry an explicit `heart|lung` audio profile; firmware switches profiles without blocking and chooses a healthy microphone slot with hysteresis rather than mixing both capsules; Android enforces matching live-audio/scan mode and plays through the media audio path.

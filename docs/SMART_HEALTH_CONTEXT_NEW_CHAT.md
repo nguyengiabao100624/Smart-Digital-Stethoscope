@@ -2,6 +2,14 @@
 
 Last updated: 2026-09-03
 
+## 2026-09-03 audio/AI production and device checkpoint
+
+- Backend commit `329c998160ff` is live on Render. Migration `059` is idempotent across Supabase table-owner and Session-Pooler roles: the owner applies DDL/security while a non-owner verifies the complete contract and fails closed if it is absent. Live health reports the exact commit; anonymous AI history is `401`; CORS returns the two canonical Firebase origins and never echoes an untrusted origin.
+- Platform Admin build `dist-firebase/client` is live at `https://shcare-admin.web.app` as Firebase Hosting version `18711810a882b99b`. The deployment released 135 files with no upload failure.
+- Xiaomi `21081111RG` was recovered through Wireless ADB. APK SHA-256 `B079E29D90B193B00566DDBB71E9079622155E7619E1B38FBEB137032EF0A881` is installed; physical `AIAssistantScreenTest` passes `1/1` at 200% font scale. The test package was removed, the normal App was reinstalled/relaunched and has no fatal Android, DNS or TLS log. Reinstallation cleared the prior authenticated app session, so provider-backed patient/doctor chat, runtime microphone permission, real STT and file picker remain an authenticated device gate.
+- COM9 is again present as CH343. A read-only serial run proves ESPTouch V2 startup and both I2S slots continue producing samples, but the board's saved `Louisnguyen` Wi-Fi returns reason `201 NO_AP_FOUND`, so WSS/audio transport is correctly disabled. Do not flash the generic production artifact over the board: the retained HIL header is for the obsolete local fixture and the device material/CA inputs are absent. A new secure App provisioning plus matching enrolled cloud identity is required before the candidate audio firmware can be flashed and HIL-credited.
+- External AI remains deliberately unavailable until server-only provider variables and an approved PHI/data-processing boundary exist. Attachments remain private storage objects and are not advertised as provider-interpreted.
+
 ## 2026-09-03 audio profiles and authenticated AI assistant candidate
 
 - Android now exposes one Shcare-styled AI assistant to both patient and doctor accounts. It has server-backed conversation history, new/select conversation, image/PDF/text/audio attachments, a lifecycle-safe Vietnamese speech recognizer, a 28-bar live voice waveform, stop-to-review transcription and explicit send. Stopping a recording never sends a message automatically.

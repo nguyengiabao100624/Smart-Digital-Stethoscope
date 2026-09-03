@@ -2,6 +2,17 @@
 
 Last updated: 2026-09-03
 
+## 2026-09-03 audio/AI promotion update
+
+- [x] Apply Supabase migration `059` and make repeat deployment safe across Supabase owner versus Render Session-Pooler roles without weakening the schema verification boundary.
+- [x] Deploy backend release `git-329c998160ff`; verify exact health marker, anonymous AI denial `401`, both canonical CORS origins and no attacker-origin echo.
+- [x] Deploy Platform Admin Firebase version `18711810a882b99b` to `shcare-admin.web.app`.
+- [x] Install APK `B079E29...0A881` on Xiaomi `21081111RG`, pass physical AI Compose test `1/1` at 200% font, remove test package and relaunch the normal crash-free App.
+- [ ] Log in on the reinstalled App, then exercise both patient and doctor conversations, runtime microphone permission, real Vietnamese stop-to-review STT, attachment picker/download and lifecycle restoration against production. Provider response stays unavailable until an approved server-only key is configured.
+- [x] Rediscover COM9 and capture safe serial proof for ESPTouch V2 plus both I2S slots.
+- [ ] Provision the board to an available 2.4 GHz network through the App secure field and restore a matching enrolled identity/CA path. Only then flash the candidate audio firmware and pass heart/lung listening, WSS, command ACK, durable scan, signed OTA and forced rollback. Current saved `Louisnguyen` fails with `201 NO_AP_FOUND`.
+- [ ] Review the Supabase security-advisor warning for `patient_import_batches` with an explicit policy design before enabling RLS; do not toggle RLS blindly because that can break the production backend role.
+
 ## 2026-09-03 audio and AI assistant release slice
 
 - [x] Add explicit heart/lung capture profiles across backend, ESP32-S3 firmware and Android; select a healthy physical mic slot per frame instead of averaging both inputs.

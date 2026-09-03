@@ -284,6 +284,58 @@ AudioSessionContractDecision evaluateAudioSessionContract(
     const std::string &payloadEncoding, int sampleRate,
     std::size_t sampleCount);
 
+enum class AudioCaptureProfile {
+  Unsupported,
+  Heart,
+  Lung,
+};
+
+struct AudioCaptureProfileDecision {
+  AudioCaptureProfileDecision() = default;
+  AudioCaptureProfileDecision(AudioCaptureProfile nextProfile,
+                              float nextLowCutHz, float nextHighCutHz,
+                              float nextListenGain,
+                              bool nextHeartMetricsEnabled)
+      : profile(nextProfile),
+        lowCutHz(nextLowCutHz),
+        highCutHz(nextHighCutHz),
+        listenGain(nextListenGain),
+        heartMetricsEnabled(nextHeartMetricsEnabled) {}
+
+  AudioCaptureProfile profile = AudioCaptureProfile::Unsupported;
+  float lowCutHz = 0.0f;
+  float highCutHz = 0.0f;
+  float listenGain = 1.0f;
+  bool heartMetricsEnabled = false;
+
+  bool accepted() const {
+    return profile != AudioCaptureProfile::Unsupported;
+  }
+};
+
+AudioCaptureProfileDecision resolveAudioCaptureProfile(
+    const std::string &profileName);
+
+struct AudioSlotFrameStats {
+  AudioSlotFrameStats() = default;
+  AudioSlotFrameStats(std::uint64_t nextEnergy, std::uint32_t nextPeak,
+                      std::uint32_t nextNonZeroSamples,
+                      std::uint32_t nextClippedSamples)
+      : energy(nextEnergy),
+        peak(nextPeak),
+        nonZeroSamples(nextNonZeroSamples),
+        clippedSamples(nextClippedSamples) {}
+
+  std::uint64_t energy = 0;
+  std::uint32_t peak = 0;
+  std::uint32_t nonZeroSamples = 0;
+  std::uint32_t clippedSamples = 0;
+};
+
+std::uint8_t selectAudioCaptureSlot(
+    const AudioSlotFrameStats &slot0, const AudioSlotFrameStats &slot1,
+    std::uint8_t currentSlot, std::size_t sampleCount);
+
 AudioFrameBuildResult buildAudioFrameV2(
     const std::string &sessionId, const std::string &scanId,
     std::uint32_t sequence, std::uint64_t timestampMs,

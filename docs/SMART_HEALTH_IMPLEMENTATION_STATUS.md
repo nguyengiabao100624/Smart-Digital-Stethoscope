@@ -2,6 +2,15 @@
 
 Last updated: 2026-09-03
 
+## 2026-09-03 audio and AI assistant implementation status
+
+- **PASS/SOURCE - audio:** backend recording commands carry an explicit `heart|lung` audio profile; firmware switches profiles without blocking and chooses a healthy microphone slot with hysteresis rather than mixing both capsules; Android enforces matching live-audio/scan mode and plays through the media audio path.
+- **PASS/SOURCE - AI data/security:** migration `059`, user/workspace-scoped repositories, private attachment storage, audited/idempotent message exchange, authorized patient/scan context and fail-closed provider configuration are implemented. Personal patient accounts are supported with nullable workspace scope. Cross-tenant records and attachment IDs are denied.
+- **PASS/SOURCE - Android UX:** patient and doctor routes share the same assistant. Conversation history, attachments, stop-to-review STT, live waveform, retry/error/provider-unavailable states, IME/navigation inset safety, dark theme, 200% font and 48dp primary controls have source/instrumentation coverage.
+- **PASS/LOCAL:** backend AI `12/12` and adjacent audio/security/clinical suites pass; Admin `209/209`, lint/build pass; Portal `141/141`, auth `392`, lint/build pass; Android unit and debug/AndroidTest build pass; firmware source `5/5` and ESP32-S3 production compile pass.
+- **PARTIAL/RUNTIME:** the provider seam is intentionally unavailable until its server-only environment variables are supplied; uploaded file contents are not yet interpreted. ADB and COM discovery are empty in the current shell, so physical Android and ESP32-S3 proof is not claimed. Native firmware unit execution is host-blocked by missing `gcc/g++`.
+- **CURRENT PRODUCT BOUNDARY:** Platform Admin remains system-wide and reports AI runtime truthfully. The Web/Portal release slice targets doctors; new workspace/business UX is deferred without deleting existing routes.
+
 ## 2026-09-03 exact-device access live status
 
 - **PASS/LIVE - backend/data/security:** Supabase migration `058` is applied and Render health reports `git-c5f9cfab384f`. Production smoke `33646658838` / job `100303009541` passed anonymous/invalid rejection, viewer/manager create-redeem-replay, revoke, exact-device/tenant isolation and cleanup with `secretsLogged=false`.

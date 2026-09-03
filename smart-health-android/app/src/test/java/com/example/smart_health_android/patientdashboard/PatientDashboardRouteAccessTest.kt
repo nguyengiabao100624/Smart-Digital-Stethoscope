@@ -28,7 +28,7 @@ class PatientDashboardRouteAccessTest {
         assertTrue(binding.features.canViewRecords)
         assertTrue(binding.features.canManageDevice)
         assertTrue(binding.features.canViewAppointments)
-        assertFalse(binding.features.canUseAssistant)
+        assertTrue(binding.features.canUseAssistant)
     }
 
     @Test
@@ -43,7 +43,7 @@ class PatientDashboardRouteAccessTest {
         assertFalse(binding.features.canViewRecords)
         assertFalse(binding.features.canManageDevice)
         assertFalse(binding.features.canViewAppointments)
-        assertFalse(binding.features.canUseAssistant)
+        assertTrue(binding.features.canUseAssistant)
     }
 
     @Test

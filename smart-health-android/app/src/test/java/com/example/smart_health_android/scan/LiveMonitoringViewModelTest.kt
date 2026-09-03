@@ -58,7 +58,13 @@ class LiveMonitoringViewModelTest {
             assertEquals(listOf("device-online", "device-offline"), state.devices.map { it.id })
             assertEquals("device-offline", state.selectedDeviceId)
             assertEquals(
-                LiveAudioExpectation("workspace-1", "patient-1", "device-offline", "scan-1"),
+                LiveAudioExpectation(
+                    "workspace-1",
+                    "patient-1",
+                    "device-offline",
+                    "scan-1",
+                    "heart",
+                ),
                 state.expectation,
             )
             assertEquals("scan-1", state.activeScanId)

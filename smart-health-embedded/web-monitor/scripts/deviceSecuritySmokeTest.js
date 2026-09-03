@@ -1671,6 +1671,9 @@ test("device telemetry is allowlisted and persisted as a safe JSON/SQL snapshot"
     lastCommandUptimeMs: 11_000,
     resetReason: " brownout ",
     i2sStatus: "ready",
+    audioProfile: "lung",
+    audioCaptureSlot: 1,
+    audioCaptureSlotSwitches: 3,
     lastCommandId: "cmd_123",
     lastCommandState: "applied",
     lastCommandCode: "OK",
@@ -1709,6 +1712,9 @@ test("device telemetry is allowlisted and persisted as a safe JSON/SQL snapshot"
     lastCommandUptimeMs: 11_000,
     resetReason: "brownout",
     i2sStatus: "ready",
+    audioProfile: "lung",
+    audioCaptureSlot: 1,
+    audioCaptureSlotSwitches: 3,
     lastCommandId: "cmd_123",
     lastCommandState: "applied",
     lastCommandCode: "OK",
@@ -1732,14 +1738,18 @@ test("device telemetry is allowlisted and persisted as a safe JSON/SQL snapshot"
   const aggregateFields = Object.keys(telemetry).filter(
     (field) => field.startsWith("i2sSlot") || field.startsWith("audioCapture"),
   );
-  assert.equal(aggregateFields.length, 17);
+  assert.equal(aggregateFields.length, 19);
   for (const field of aggregateFields) {
     assert.deepEqual(sanitizeDeviceTelemetry({ [field]: -1 }), {});
     assert.deepEqual(sanitizeDeviceTelemetry({ [field]: 0.5 }), {});
     assert.deepEqual(sanitizeDeviceTelemetry({ [field]: UINT32_MAX + 1 }), {});
     assert.deepEqual(sanitizeDeviceTelemetry({ [field]: "1" }), {});
-    assert.deepEqual(sanitizeDeviceTelemetry({ [field]: UINT32_MAX }), { [field]: UINT32_MAX });
+    assert.deepEqual(
+      sanitizeDeviceTelemetry({ [field]: UINT32_MAX }),
+      field === "audioCaptureSlot" ? {} : { [field]: UINT32_MAX },
+    );
   }
+  assert.deepEqual(sanitizeDeviceTelemetry({ audioProfile: "raw" }), {});
   assert.deepEqual(sanitizeDeviceTelemetry({ deviceSecret: "forbidden", ...telemetry }), telemetry);
   assert.equal(Object.hasOwn(telemetry, "rawAudio"), false);
   assert.equal(Object.hasOwn(telemetry, "pcmSamples"), false);
@@ -4228,7 +4238,7 @@ test("audio sessions are concurrent per device and start ACKs are durable and id
   await authenticateDevice(beta, "dev_beta", secrets.beta);
 
   const token = await loginPlatformAdmin();
-  const startScan = (patientId, deviceId, idempotencyKey) =>
+  const startScan = (patientId, deviceId, mode, idempotencyKey) =>
     requestJson("/api/v1/scans/start", {
       method: "POST",
       headers: {
@@ -4236,12 +4246,12 @@ test("audio sessions are concurrent per device and start ACKs are durable and id
         "Content-Type": "application/json",
         "Idempotency-Key": idempotencyKey,
       },
-      body: JSON.stringify({ patientId, deviceId, mode: "heart" }),
+      body: JSON.stringify({ patientId, deviceId, mode }),
     });
 
   const [alphaStarted, betaStarted] = await Promise.all([
-    startScan("pat_alpha", "dev_alpha_peer", "audio-start-alpha-concurrent"),
-    startScan("pat_beta", "dev_beta", "audio-start-beta-concurrent"),
+    startScan("pat_alpha", "dev_alpha_peer", "heart", "audio-start-alpha-concurrent"),
+    startScan("pat_beta", "dev_beta", "lung", "audio-start-beta-concurrent"),
   ]);
   assert.equal(alphaStarted.response.status, 201, JSON.stringify(alphaStarted.body));
   assert.equal(betaStarted.response.status, 201, JSON.stringify(betaStarted.body));
@@ -4254,8 +4264,15 @@ test("audio sessions are concurrent per device and start ACKs are durable and id
   assert.equal(betaCommand.type, "audio.session.start");
   assert.equal(alphaCommand.payload.scanId, alphaStarted.body.scan.id);
   assert.equal(betaCommand.payload.scanId, betaStarted.body.scan.id);
+  assert.equal(alphaCommand.payload.audioProfile, "heart");
+  assert.equal(betaCommand.payload.audioProfile, "lung");
 
-  const replayed = await startScan("pat_alpha", "dev_alpha_peer", "audio-start-alpha-concurrent");
+  const replayed = await startScan(
+    "pat_alpha",
+    "dev_alpha_peer",
+    "heart",
+    "audio-start-alpha-concurrent",
+  );
   assert.equal(replayed.response.status, 200, JSON.stringify(replayed.body));
   assert.equal(replayed.body.idempotent, true);
   assert.equal(replayed.body.scan.id, alphaStarted.body.scan.id);

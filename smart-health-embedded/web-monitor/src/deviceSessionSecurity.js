@@ -96,6 +96,8 @@ const DEVICE_TELEMETRY_UINT32_FIELDS = new Set([
   "audioCaptureFramesEnqueued",
   "audioCaptureFramesDropped",
   "audioCaptureFramesStale",
+  "audioCaptureSlot",
+  "audioCaptureSlotSwitches",
   "i2sSlot0Rms",
   "i2sSlot0Peak",
   "i2sSlot0WindowCount",
@@ -113,6 +115,7 @@ const DEVICE_TELEMETRY_UINT32_FIELDS = new Set([
 const DEVICE_TELEMETRY_STRING_FIELDS = new Set([
   "resetReason",
   "i2sStatus",
+  "audioProfile",
   "lastCommandId",
   "lastCommandState",
   "lastCommandCode",
@@ -143,6 +146,12 @@ function sanitizeDeviceTelemetry(value) {
       : "";
     if (!stringValue) continue;
     sanitized[field] = stringValue;
+  }
+  if (sanitized.audioProfile && !["heart", "lung"].includes(sanitized.audioProfile)) {
+    delete sanitized.audioProfile;
+  }
+  if (sanitized.audioCaptureSlot !== undefined && ![0, 1].includes(sanitized.audioCaptureSlot)) {
+    delete sanitized.audioCaptureSlot;
   }
   if (typeof source.audioStatus === "string") {
     const audioStatus = source.audioStatus.trim().slice(0, 40);

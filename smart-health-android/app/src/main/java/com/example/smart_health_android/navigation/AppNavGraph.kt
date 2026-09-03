@@ -990,6 +990,9 @@ fun AppNavGraph(
                     navController.navigate(ShcareMobileRoute.Records.routePattern)
                 },
                 onNavigateToAppointments = { navController.navigate(AppointmentRoute.List.route) },
+                onNavigateToAssistant = {
+                    navController.navigate(ShcareMobileRoute.AiAssistant.routePattern)
+                },
                 onNavigateToRecordDetail = { recordId ->
                     navController.navigate(
                         ShcareMobileRoute.RecordDetail.routePattern.replace(

@@ -104,9 +104,11 @@ assert.match(capture, /i2s_read\(/);
 assert.match(capture, /updateI2sSlotDiagnostics\(micBuffer, samplesRead\)/);
 assert.match(
   capture,
-  /const int32_t rawMixed = \(int32_t\)\(\(\(int64_t\)rawA \+ rawB\) \/ 2\)/,
-  "the canonical averaged mono PCM source must remain unchanged",
+  /const std::uint8_t nextCaptureSlot = shcare::selectAudioCaptureSlot\(/,
+  "capture must select one healthy slot without phase-cancelling two microphones",
 );
+assert.match(capture, /micBuffer\[sampleOffset \+ selectedAudioCaptureSlot\]/);
+assert.doesNotMatch(capture, /rawMixed|\(\(int64_t\)rawA \+ rawB\) \/ 2/);
 assert.match(capture, /xQueueSend\(audioCaptureQueue, &item, 0\)/);
 assert.doesNotMatch(capture, /sendAudioCloud|cloudSocket|sendAudioUdp/);
 assert.match(captureTask, /captureI2sFrame\(\)/);

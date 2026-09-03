@@ -775,8 +775,41 @@ function rowToChatMessage(row) {
     content: row.content || "",
     userId: row.user_id || "",
     organizationId: row.organization_id || "",
+    conversationId: row.conversation_id || "",
+    references: Array.isArray(row.context_references) ? row.context_references : [],
     provider: row.provider || "",
     model: row.model || "",
+    createdAt: toIso(row.created_at),
+  };
+}
+
+function rowToAiConversation(row) {
+  if (!row) return null;
+  return {
+    id: row.id || "",
+    userId: row.user_id || "",
+    organizationId: row.organization_id || "",
+    title: row.title || "Cuộc trò chuyện mới",
+    archivedAt: toIso(row.archived_at) || null,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  };
+}
+
+function rowToAiAttachment(row) {
+  if (!row) return null;
+  return {
+    id: row.id || "",
+    conversationId: row.conversation_id || "",
+    messageId: row.message_id || "",
+    userId: row.user_id || "",
+    organizationId: row.organization_id || "",
+    name: row.name || "",
+    contentType: row.content_type || "application/octet-stream",
+    byteSize: Number(row.byte_size || 0),
+    sha256: row.sha256 || "",
+    objectKey: row.object_key || "",
+    storageProvider: row.storage_provider || "",
     createdAt: toIso(row.created_at),
   };
 }
@@ -2520,9 +2553,10 @@ function createRepositories(options) {
     await queryable.query(
       `
         INSERT INTO chat_messages (
-          id, role, content, user_id, organization_id, provider, model, created_at
+          id, role, content, user_id, organization_id, conversation_id,
+          context_references, provider, model, created_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::timestamptz, now()))
+        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, COALESCE($10::timestamptz, now()))
         ON CONFLICT (id) DO NOTHING
       `,
       [
@@ -2531,6 +2565,8 @@ function createRepositories(options) {
         message.content,
         optionalForeignKey(message.userId),
         optionalForeignKey(message.organizationId),
+        optionalForeignKey(message.conversationId),
+        JSON.stringify(Array.isArray(message.references) ? message.references : []),
         optional(message.provider),
         optional(message.model),
         optionalTimestamp(message.createdAt),
@@ -6775,6 +6811,8 @@ function createRepositories(options) {
         if (item.actorUserId === id) item.actorUserId = "";
       }
       db.chatMessages = (db.chatMessages || []).filter((item) => item.userId !== id);
+      db.aiConversations = (db.aiConversations || []).filter((item) => item.userId !== id);
+      db.aiChatAttachments = (db.aiChatAttachments || []).filter((item) => item.userId !== id);
       if (!options.deferSave) await saveDb();
       return Boolean(sqlDeletedUser || user);
     },
@@ -19823,11 +19861,207 @@ function createRepositories(options) {
     },
   };
 
-  function runtimeChatMessagesForScope(userId, organizationId) {
+  function runtimeAiConversationsForScope(userId, organizationId, includeArchived = false) {
+    const db = getDb();
+    db.aiConversations = Array.isArray(db.aiConversations) ? db.aiConversations : [];
+    return db.aiConversations
+      .filter((conversation) => (
+        conversation.userId === userId &&
+        conversation.organizationId === organizationId &&
+        (includeArchived || !conversation.archivedAt)
+      ))
+      .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")))
+      .slice(0, 100);
+  }
+
+  const aiConversations = {
+    async listByScope(userId, organizationId, includeArchived = false) {
+      const actorId = String(userId || "");
+      const workspaceId = String(organizationId || "");
+      if (!actorId) return [];
+      const sqlItems = await withSql(async (pool) => {
+        const result = await pool.query(
+          `SELECT * FROM ai_conversations
+           WHERE user_id = $1 AND organization_id IS NOT DISTINCT FROM $2
+             AND ($3::boolean OR archived_at IS NULL)
+           ORDER BY updated_at DESC LIMIT 100`,
+          [actorId, optionalForeignKey(workspaceId), Boolean(includeArchived)],
+        );
+        return result.rows.map(rowToAiConversation);
+      });
+      const merged = new Map();
+      for (const item of runtimeAiConversationsForScope(actorId, workspaceId, includeArchived)) merged.set(item.id, item);
+      for (const item of sqlItems || []) merged.set(item.id, item);
+      return [...merged.values()]
+        .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")))
+        .slice(0, 100);
+    },
+
+    async findByScope(id, userId, organizationId, includeArchived = false) {
+      const items = await this.listByScope(userId, organizationId, includeArchived);
+      return items.find((item) => item.id === id) || null;
+    },
+
+    async create(conversation) {
+      const db = getDb();
+      db.aiConversations = Array.isArray(db.aiConversations) ? db.aiConversations : [];
+      syncArrayItem(db.aiConversations, conversation);
+      await withSql((pool) => pool.query(
+        `INSERT INTO ai_conversations (
+           id, user_id, organization_id, title, archived_at, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5::timestamptz, COALESCE($6::timestamptz, now()), COALESCE($7::timestamptz, now()))
+         ON CONFLICT (id) DO NOTHING`,
+        [
+          conversation.id,
+          conversation.userId,
+          optionalForeignKey(conversation.organizationId),
+          conversation.title,
+          optionalTimestamp(conversation.archivedAt),
+          optionalTimestamp(conversation.createdAt),
+          optionalTimestamp(conversation.updatedAt),
+        ],
+      ));
+      await saveDb();
+      return conversation;
+    },
+
+    async update(conversation) {
+      const db = getDb();
+      db.aiConversations = Array.isArray(db.aiConversations) ? db.aiConversations : [];
+      syncArrayItem(db.aiConversations, conversation);
+      await withSql((pool) => pool.query(
+        `UPDATE ai_conversations
+         SET title = $4, archived_at = $5::timestamptz, updated_at = COALESCE($6::timestamptz, now())
+         WHERE id = $1 AND user_id = $2 AND organization_id IS NOT DISTINCT FROM $3`,
+        [
+          conversation.id,
+          conversation.userId,
+          optionalForeignKey(conversation.organizationId),
+          conversation.title,
+          optionalTimestamp(conversation.archivedAt),
+          optionalTimestamp(conversation.updatedAt),
+        ],
+      ));
+      await saveDb();
+      return conversation;
+    },
+
+    async saveAttachment(attachment) {
+      const db = getDb();
+      db.aiChatAttachments = Array.isArray(db.aiChatAttachments) ? db.aiChatAttachments : [];
+      syncArrayItem(db.aiChatAttachments, attachment);
+      await withSql((pool) => pool.query(
+        `INSERT INTO ai_chat_attachments (
+           id, conversation_id, message_id, user_id, organization_id, name,
+           content_type, byte_size, sha256, object_key, storage_provider, created_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12::timestamptz, now()))
+         ON CONFLICT (id) DO NOTHING`,
+        [
+          attachment.id,
+          attachment.conversationId,
+          optionalForeignKey(attachment.messageId),
+          attachment.userId,
+          optionalForeignKey(attachment.organizationId),
+          attachment.name,
+          attachment.contentType,
+          attachment.byteSize,
+          attachment.sha256,
+          attachment.objectKey,
+          attachment.storageProvider,
+          optionalTimestamp(attachment.createdAt),
+        ],
+      ));
+      await saveDb();
+      return attachment;
+    },
+
+    async listAttachments(conversationId, userId, organizationId) {
+      const db = getDb();
+      db.aiChatAttachments = Array.isArray(db.aiChatAttachments) ? db.aiChatAttachments : [];
+      const runtime = db.aiChatAttachments.filter((item) => (
+        item.conversationId === conversationId && item.userId === userId && item.organizationId === organizationId
+      ));
+      const sqlItems = await withSql(async (pool) => {
+        const result = await pool.query(
+          `SELECT * FROM ai_chat_attachments
+           WHERE conversation_id = $1 AND user_id = $2
+             AND organization_id IS NOT DISTINCT FROM $3
+           ORDER BY created_at ASC`,
+          [conversationId, userId, optionalForeignKey(organizationId)],
+        );
+        return result.rows.map(rowToAiAttachment);
+      });
+      const merged = new Map(runtime.map((item) => [item.id, item]));
+      for (const item of sqlItems || []) merged.set(item.id, item);
+      return [...merged.values()].sort((left, right) => String(left.createdAt || "").localeCompare(String(right.createdAt || "")));
+    },
+
+    async findAttachment(id, userId, organizationId) {
+      const db = getDb();
+      const runtime = (db.aiChatAttachments || []).find((item) => (
+        item.id === id && item.userId === userId && item.organizationId === organizationId
+      ));
+      if (runtime) return runtime;
+      return withSql(async (pool) => {
+        const result = await pool.query(
+          `SELECT * FROM ai_chat_attachments
+           WHERE id = $1 AND user_id = $2
+             AND organization_id IS NOT DISTINCT FROM $3
+           LIMIT 1`,
+          [id, userId, optionalForeignKey(organizationId)],
+        );
+        return rowToAiAttachment(result.rows[0]);
+      });
+    },
+
+    async bindAttachments({ attachmentIds, messageId, conversationId, userId, organizationId }) {
+      const ids = [...new Set((Array.isArray(attachmentIds) ? attachmentIds : []).map(String).filter(Boolean))];
+      if (!ids.length || !messageId || !conversationId || !userId) return [];
+      const db = getDb();
+      db.aiChatAttachments = Array.isArray(db.aiChatAttachments) ? db.aiChatAttachments : [];
+      const runtime = [];
+      for (const item of db.aiChatAttachments) {
+        if (
+          ids.includes(item.id) &&
+          item.conversationId === conversationId &&
+          item.userId === userId &&
+          item.organizationId === organizationId &&
+          (!item.messageId || item.messageId === messageId)
+        ) {
+          item.messageId = messageId;
+          runtime.push(item);
+        }
+      }
+      const sqlItems = await withSql(async (pool) => {
+        const result = await pool.query(
+          `UPDATE ai_chat_attachments
+           SET message_id = $1
+           WHERE id = ANY($2::text[])
+             AND conversation_id = $3
+             AND user_id = $4
+             AND organization_id IS NOT DISTINCT FROM $5
+             AND (message_id IS NULL OR message_id = $1)
+           RETURNING *`,
+          [messageId, ids, conversationId, userId, optionalForeignKey(organizationId)],
+        );
+        return result.rows.map(rowToAiAttachment);
+      });
+      const merged = new Map(runtime.map((item) => [item.id, item]));
+      for (const item of sqlItems || []) merged.set(item.id, item);
+      await saveDb();
+      return ids.map((id) => merged.get(id)).filter(Boolean);
+    },
+  };
+
+  function runtimeChatMessagesForScope(userId, organizationId, conversationId = "") {
     const db = getDb();
     db.chatMessages = Array.isArray(db.chatMessages) ? db.chatMessages : [];
     return db.chatMessages
-      .filter((message) => message.userId === userId && message.organizationId === organizationId)
+      .filter((message) => (
+        message.userId === userId &&
+        message.organizationId === organizationId &&
+        (!conversationId || message.conversationId === conversationId)
+      ))
       .sort((left, right) => String(left.createdAt || "").localeCompare(String(right.createdAt || "")))
       .slice(-100);
   }
@@ -19859,25 +20093,26 @@ function createRepositories(options) {
   }
 
   const chatMessages = {
-    async listByScope(userId, organizationId) {
+    async listByScope(userId, organizationId, conversationId = "") {
       const actorId = String(userId || "");
       const workspaceId = String(organizationId || "");
-      if (!actorId || !workspaceId) return [];
+      if (!actorId) return [];
       const sqlMessages = await withSql(async (pool) => {
         const result = await pool.query(
           `
             SELECT *
             FROM chat_messages
-            WHERE user_id = $1 AND organization_id = $2
+            WHERE user_id = $1 AND organization_id IS NOT DISTINCT FROM $2
+              AND ($3::text = '' OR conversation_id = $3)
             ORDER BY created_at ASC
             LIMIT 100
           `,
-          [actorId, workspaceId],
+          [actorId, optionalForeignKey(workspaceId), String(conversationId || "")],
         );
         return result.rows.map(rowToChatMessage);
       });
       const merged = new Map();
-      for (const message of runtimeChatMessagesForScope(actorId, workspaceId)) merged.set(message.id, message);
+      for (const message of runtimeChatMessagesForScope(actorId, workspaceId, String(conversationId || ""))) merged.set(message.id, message);
       for (const message of sqlMessages || []) merged.set(message.id, message);
       return [...merged.values()]
         .sort((left, right) => String(left.createdAt || "").localeCompare(String(right.createdAt || "")))
@@ -19887,6 +20122,7 @@ function createRepositories(options) {
     async executeWithAudit(input = {}) {
       const actorId = String(input.userId || "");
       const workspaceId = String(input.organizationId || "");
+      const conversationId = String(input.conversationId || "");
       const idempotency = input.idempotency && input.idempotency.key
         ? {
             scope: String(input.idempotency.scope || ""),
@@ -19895,7 +20131,7 @@ function createRepositories(options) {
             fingerprint: String(input.idempotency.fingerprint || ""),
           }
         : null;
-      if (!actorId || !workspaceId || typeof input.createExchange !== "function") {
+      if (!actorId || typeof input.createExchange !== "function") {
         throw repositoryError(400, "AI_CHAT_INPUT_INVALID", "AI chat exchange input is invalid");
       }
       const inFlightKey = idempotency
@@ -19927,7 +20163,7 @@ function createRepositories(options) {
               auditLog: null,
             };
           }
-          const previousMessages = runtimeChatMessagesForScope(actorId, workspaceId);
+          const previousMessages = runtimeChatMessagesForScope(actorId, workspaceId, conversationId);
           const exchange = await input.createExchange(previousMessages);
           const messages = Array.isArray(exchange.messages) ? exchange.messages : [];
           const auditLog = createAuditLog({
@@ -19983,14 +20219,15 @@ function createRepositories(options) {
             `
               SELECT *
               FROM chat_messages
-              WHERE user_id = $1 AND organization_id = $2
+              WHERE user_id = $1 AND organization_id IS NOT DISTINCT FROM $2
+                AND ($3::text = '' OR conversation_id = $3)
               ORDER BY created_at ASC
               LIMIT 100
             `,
-            [actorId, workspaceId],
+            [actorId, optionalForeignKey(workspaceId), conversationId],
           );
           const previousById = new Map();
-          for (const message of runtimeChatMessagesForScope(actorId, workspaceId)) previousById.set(message.id, message);
+          for (const message of runtimeChatMessagesForScope(actorId, workspaceId, conversationId)) previousById.set(message.id, message);
           for (const row of previousResult.rows) {
             const message = rowToChatMessage(row);
             previousById.set(message.id, message);
@@ -20710,12 +20947,22 @@ function createRepositories(options) {
             `
               SELECT *
               FROM chat_messages
-              WHERE user_id IS NOT NULL AND organization_id IS NOT NULL
+              WHERE user_id IS NOT NULL
               ORDER BY created_at ASC
               LIMIT 500
             `,
           );
           hydratedState.chatMessages = chatResult.rows.map(rowToChatMessage);
+        } catch (err) {
+          onSqlError(err);
+        }
+        try {
+          const [conversationResult, attachmentResult] = await Promise.all([
+            pool.query("SELECT * FROM ai_conversations ORDER BY updated_at DESC LIMIT 500"),
+            pool.query("SELECT * FROM ai_chat_attachments ORDER BY created_at DESC LIMIT 500"),
+          ]);
+          hydratedState.aiConversations = conversationResult.rows.map(rowToAiConversation);
+          hydratedState.aiChatAttachments = attachmentResult.rows.map(rowToAiAttachment);
         } catch (err) {
           onSqlError(err);
         }
@@ -20745,7 +20992,7 @@ function createRepositories(options) {
         db.settings = hydrated.settings;
       }
       const counts = {};
-      for (const key of ["organizations", "servicePackages", "users", "memberships", "patients", "appointments", "doctorPatientAccess", "devices", "scans", "audioFiles", "aiResults", "deviceCommands", "deviceEvents", "notificationDevices", "notifications", "exports", "auditLogs", "authSessions", "chatMessages", "twoFactorCredentials", "twoFactorEnrollments", "twoFactorChallenges", "twoFactorTokens"]) {
+      for (const key of ["organizations", "servicePackages", "users", "memberships", "patients", "appointments", "doctorPatientAccess", "devices", "scans", "audioFiles", "aiResults", "deviceCommands", "deviceEvents", "notificationDevices", "notifications", "exports", "auditLogs", "authSessions", "chatMessages", "aiConversations", "aiChatAttachments", "twoFactorCredentials", "twoFactorEnrollments", "twoFactorChallenges", "twoFactorTokens"]) {
         if (!Array.isArray(hydrated[key])) {
           continue;
         }
@@ -20818,6 +21065,7 @@ function createRepositories(options) {
     deviceEvents,
     notificationDevices,
     chatMessages,
+    aiConversations,
     twoFactor,
     organizations,
     users,

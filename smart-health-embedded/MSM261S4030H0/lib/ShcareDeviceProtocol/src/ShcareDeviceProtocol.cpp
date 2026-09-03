@@ -906,6 +906,60 @@ AudioSessionContractDecision evaluateAudioSessionContract(
   return AudioSessionContractDecision(AudioSessionContractCode::AcceptedV2);
 }
 
+AudioCaptureProfileDecision resolveAudioCaptureProfile(
+    const std::string &profileName) {
+  if (profileName == "heart") {
+    return {AudioCaptureProfile::Heart, 30.0f, 220.0f, 4.2f, true};
+  }
+  if (profileName == "lung") {
+    return {AudioCaptureProfile::Lung, 80.0f, 2000.0f, 2.6f, false};
+  }
+  return {};
+}
+
+namespace {
+
+bool isUsableAudioSlot(const AudioSlotFrameStats &stats,
+                       std::size_t sampleCount) {
+  if (sampleCount == 0 || stats.nonZeroSamples < sampleCount / 4U) {
+    return false;
+  }
+  const std::uint32_t allowedClipped =
+      static_cast<std::uint32_t>(sampleCount / 50U) + 1U;
+  if (stats.clippedSamples > allowedClipped) {
+    return false;
+  }
+  return stats.energy >= static_cast<std::uint64_t>(sampleCount) * 64ULL;
+}
+
+}  // namespace
+
+std::uint8_t selectAudioCaptureSlot(
+    const AudioSlotFrameStats &slot0, const AudioSlotFrameStats &slot1,
+    std::uint8_t currentSlot, std::size_t sampleCount) {
+  const bool slot0Usable = isUsableAudioSlot(slot0, sampleCount);
+  const bool slot1Usable = isUsableAudioSlot(slot1, sampleCount);
+  if (slot0Usable != slot1Usable) {
+    return slot0Usable ? 0U : 1U;
+  }
+
+  if (!slot0Usable && !slot1Usable) {
+    if (slot0.clippedSamples != slot1.clippedSamples) {
+      return slot0.clippedSamples < slot1.clippedSamples ? 0U : 1U;
+    }
+    return slot1.energy > slot0.energy ? 1U : 0U;
+  }
+
+  const std::uint8_t stableCurrent = currentSlot == 1U ? 1U : 0U;
+  const AudioSlotFrameStats &current = stableCurrent == 0U ? slot0 : slot1;
+  const AudioSlotFrameStats &candidate = stableCurrent == 0U ? slot1 : slot0;
+  if (candidate.energy > current.energy &&
+      candidate.energy - current.energy > current.energy) {
+    return stableCurrent == 0U ? 1U : 0U;
+  }
+  return stableCurrent;
+}
+
 AudioFrameBuildResult buildAudioFrameV2(
     const std::string &sessionId, const std::string &scanId,
     std::uint32_t sequence, std::uint64_t timestampMs,

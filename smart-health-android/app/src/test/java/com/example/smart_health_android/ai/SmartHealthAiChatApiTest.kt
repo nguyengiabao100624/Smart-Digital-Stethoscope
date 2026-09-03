@@ -109,4 +109,52 @@ class SmartHealthAiChatApiTest {
             assertEquals("req-ai-1", error.requestId)
         }
     }
+
+    @Test
+    fun conversationContractCarriesHistoryReferencesAndSelectedAttachments() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json").setBody(
+                """{
+                  "conversation":{"id":"conv-1","title":"Lượt đo tim","updatedAt":"2026-09-03T00:00:00Z"},
+                  "availability":{"available":true,"provider":"clinical-provider"},
+                  "messages":[{
+                    "id":"msg-ai","role":"assistant","content":"Thông tin hỗ trợ",
+                    "conversationId":"conv-1",
+                    "references":[{"type":"scan","id":"scan-1","label":"heart · mỏm tim"}]
+                  }],
+                  "attachments":[{"id":"att-1","conversationId":"conv-1","name":"ket-qua.pdf","contentType":"application/pdf","byteSize":128,"providerInterpretation":"not_enabled"}],
+                  "references":[{"type":"scan","id":"scan-1","label":"heart · mỏm tim"}]
+                }""",
+            ),
+        )
+
+        val result = api.getAiConversationSession("conv-1")
+        val request = server.takeRequest()
+
+        assertEquals("/api/v1/ai/conversations/conv-1", request.path)
+        assertEquals("conv-1", result.conversation?.id)
+        assertEquals("scan-1", result.messages.single().references.single().id)
+        assertEquals("not_enabled", result.attachments.single().providerInterpretation)
+    }
+
+    @Test
+    fun conversationSendBindsAttachmentIdsAndIdempotency() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json").setBody(
+                """{
+                  "conversation":{"id":"conv-1","title":"Giải thích kết quả"},
+                  "availability":{"available":true,"provider":"clinical-provider"},
+                  "messages":[]
+                }""",
+            ),
+        )
+
+        api.sendAiConversationMessage("conv-1", "Giải thích kết quả", listOf("att-1"), "idem-conv-1")
+        val request = server.takeRequest()
+        val payload = org.json.JSONObject(request.body.readUtf8())
+
+        assertEquals("/api/v1/ai/conversations/conv-1/messages", request.path)
+        assertEquals("idem-conv-1", request.getHeader("Idempotency-Key"))
+        assertEquals("att-1", payload.getJSONArray("attachmentIds").getString(0))
+    }
 }

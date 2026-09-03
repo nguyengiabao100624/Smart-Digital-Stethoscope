@@ -466,6 +466,7 @@ bool pendingCredentialRotationReady = false;
 bool authUsingPendingCredential = false;
 String activeAudioSessionId = "";
 String activeAudioScanId = "";
+String activeAudioProfileName = "heart";
 String otaBootOutcome = "";
 bool audioSessionActive = false;
 bool audioDiscontinuityPending = false;
@@ -539,6 +540,8 @@ bool pauseAudioCaptureTask();
 void resumeAudioCaptureTask();
 void drainAudioCaptureQueue(std::size_t maxPackets =
                                 AUDIO_CAPTURE_MAX_DRAIN_PER_LOOP);
+void configureAudioProfile(
+    const shcare::AudioCaptureProfileDecision &profile);
 
 // =======================
 // MSM261S4030H0 I2S pins
@@ -606,17 +609,17 @@ struct I2sSlotDiagnostics {
 
 I2sSlotDiagnostics i2sSlot0Diagnostics;
 I2sSlotDiagnostics i2sSlot1Diagnostics;
+std::uint8_t selectedAudioCaptureSlot = 0;
+std::uint32_t audioCaptureSlotSwitchCount = 0;
 
 WiFiUDP audioUdp;
 IPAddress audioServerIp;
 
 // =======================
-// Heartbeat listening profile
+// Session-bound auscultation profiles
 // =======================
 // For listening to heart sounds through a stethoscope earpiece. This keeps the
 // main S1/S2 band while rejecting low rumble that sounds like wind.
-const float HEART_LOW_CUT_HZ = 55.0f;
-const float HEART_HIGH_CUT_HZ = 190.0f;
 const bool ENABLE_HUM_NOTCH = true;
 const bool ENABLE_HUM_HARMONIC_NOTCH = true;
 const bool ENABLE_EXTRA_LOW_PASS_STAGE = true;
@@ -708,13 +711,13 @@ struct Biquad {
   }
 };
 
-Biquad heartHighPass;
-Biquad heartHighPass2;
+Biquad listenHighPass;
+Biquad listenHighPass2;
 Biquad humNotch50;
 Biquad humNotch100;
-Biquad heartLowPass1;
-Biquad heartLowPass2;
-Biquad heartLowPass3;
+Biquad listenLowPass1;
+Biquad listenLowPass2;
+Biquad listenLowPass3;
 Biquad metricHighPass;
 Biquad metricLowPass1;
 Biquad metricLowPass2;
@@ -723,7 +726,11 @@ Biquad metricLowPass2;
 // Audio tuning
 // =======================
 const int RAW_SHIFT = 14;
+const std::uint32_t I2S_SLOT_CLIP_LEVEL = 120000U;
 float volumeGain = 4.2f;
+shcare::AudioCaptureProfile activeAudioProfile =
+    shcare::AudioCaptureProfile::Heart;
+bool activeProfileUsesHeartMetrics = true;
 float dcOffset = 0.0f;
 float inputSmooth = 0.0f;
 float outputSmooth = 0.0f;
@@ -3252,6 +3259,15 @@ String cloudTelemetryJson(const char *type) {
   json += "\"i2sReadFailures\":";
   json += String(i2sReadFailureCount);
   json += ",";
+  json += "\"audioProfile\":\"";
+  json += jsonEscape(activeAudioProfileName.c_str());
+  json += "\",";
+  json += "\"audioCaptureSlot\":";
+  json += String(selectedAudioCaptureSlot);
+  json += ",";
+  json += "\"audioCaptureSlotSwitches\":";
+  json += String(audioCaptureSlotSwitchCount);
+  json += ",";
   json += "\"i2sSlot0Rms\":";
   json += String(i2sSlot0Diagnostics.rms);
   json += ",";
@@ -4954,18 +4970,23 @@ void handleCloudCommand(const String &message) {
     const String frameEncoding(
         command.payloadString("frameEncoding").c_str());
     const String encoding(command.payloadString("encoding").c_str());
+    const String audioProfileName(
+        command.payloadString("audioProfile").c_str());
     const int sampleRate = command.payloadInt("sampleRate", 0);
     const int sampleCount = command.payloadInt("sampleCount", 0);
     const auto audioContract = shcare::evaluateAudioSessionContract(
         audioProtocolVersion, std::string(frameEncoding.c_str()),
         std::string(encoding.c_str()), sampleRate,
         sampleCount > 0 ? static_cast<size_t>(sampleCount) : 0);
+    const auto audioProfile = shcare::resolveAudioCaptureProfile(
+        std::string(audioProfileName.c_str()));
     if (!i2sReady || i2sMaintenancePaused) {
       sendCommandState(command, "failed", "AUDIO_NOT_READY",
                        "i2s capture is unavailable");
       return;
     }
-    if (!audioContract.accepted() || commandDeviceId != String(deviceId) ||
+    if (!audioContract.accepted() || !audioProfile.accepted() ||
+        commandDeviceId != String(deviceId) ||
         workspaceId.length() == 0 || patientId.length() == 0 ||
         sessionId.length() == 0 ||
         sessionId.length() > shcare::kAudioV2MaxSessionIdBytes ||
@@ -4975,6 +4996,13 @@ void handleCloudCommand(const String &message) {
                        "audio session contract rejected");
       return;
     }
+    if (!pauseAudioCaptureTask()) {
+      sendCommandState(command, "failed", "AUDIO_PROFILE_SWITCH_TIMEOUT",
+                       "audio capture did not pause for profile switch");
+      return;
+    }
+    configureAudioProfile(audioProfile);
+    resumeAudioCaptureTask();
     beginValidatedCommand(command);
     activeAudioSessionId = sessionId;
     activeAudioScanId = scanId;
@@ -5659,26 +5687,53 @@ float applySoftCompressor(float x) {
   return x * floorMix * compressorGain;
 }
 
-void setupHeartbeatFilters() {
-  heartHighPass.setHighPass(HEART_LOW_CUT_HZ, FILTER_Q);
-  heartHighPass2.setHighPass(HEART_LOW_CUT_HZ, FILTER_Q);
+void resetAudioSignalState() {
+  dcOffset = 0.0f;
+  inputSmooth = 0.0f;
+  outputSmooth = 0.0f;
+  compressorEnvelope = 0.0f;
+  compressorNoise = 8.0f;
+  compressorActivity = 0.0f;
+  compressorGain = 1.0f;
+  compressorHoldCounter = 0;
+  agcGain = 1.0f;
+  heartEnvelope = 0.0f;
+  heartEnvelopeMean = 0.0f;
+  heartThreshold = 500.0f;
+  heartBpm = 0.0f;
+  sampleCounter = 0;
+  lastBeatSample = 0;
+  beatsInPlotWindow = 0;
+  beatArmed = true;
+}
+
+void configureAudioProfile(
+    const shcare::AudioCaptureProfileDecision &profile) {
+  activeAudioProfile = profile.profile;
+  activeProfileUsesHeartMetrics = profile.heartMetricsEnabled;
+  activeAudioProfileName =
+      profile.profile == shcare::AudioCaptureProfile::Lung ? "lung" : "heart";
+  volumeGain = profile.listenGain;
+  listenHighPass.setHighPass(profile.lowCutHz, FILTER_Q);
+  listenHighPass2.setHighPass(profile.lowCutHz, FILTER_Q);
   humNotch50.setNotch(50.0f, HUM_NOTCH_Q);
   humNotch100.setNotch(100.0f, HUM_NOTCH_Q);
-  heartLowPass1.setLowPass(HEART_HIGH_CUT_HZ, FILTER_Q);
-  heartLowPass2.setLowPass(HEART_HIGH_CUT_HZ, FILTER_Q);
+  listenLowPass1.setLowPass(profile.highCutHz, FILTER_Q);
+  listenLowPass2.setLowPass(profile.highCutHz, FILTER_Q);
+  listenLowPass3.setLowPass(profile.highCutHz, FILTER_Q);
+  resetAudioSignalState();
 
-  Serial.print("Heartbeat listen band ready: ");
-  Serial.print(HEART_LOW_CUT_HZ);
+  Serial.print("Auscultation profile ready: ");
+  Serial.print(activeAudioProfileName);
+  Serial.print(" ");
+  Serial.print(profile.lowCutHz);
   Serial.print(" - ");
-  Serial.print(HEART_HIGH_CUT_HZ);
+  Serial.print(profile.highCutHz);
   Serial.println(" Hz");
-  if (ENABLE_HUM_NOTCH) {
+  if (ENABLE_HUM_NOTCH && activeProfileUsesHeartMetrics) {
     Serial.println(ENABLE_HUM_HARMONIC_NOTCH
                        ? "Hum notches ready: 50 Hz and 100 Hz"
                        : "Hum notch ready: 50 Hz");
-  }
-  if (ENABLE_EXTRA_LOW_PASS_STAGE) {
-    heartLowPass3.setLowPass(HEART_HIGH_CUT_HZ, FILTER_Q);
   }
 
   metricHighPass.setHighPass(METRIC_LOW_CUT_HZ, FILTER_Q);
@@ -5692,6 +5747,10 @@ void setupHeartbeatFilters() {
   Serial.println(" Hz");
   Serial.print("UDP stream mode: ");
   Serial.println(AUDIO_STREAM_MODE);
+}
+
+void setupAudioFilters() {
+  configureAudioProfile(shcare::resolveAudioCaptureProfile("heart"));
 }
 
 void handleWiFiReconnect() {
@@ -6017,18 +6076,18 @@ float preprocessRawSample(int32_t raw) {
 }
 
 int16_t processListenSample(float x) {
-  float y = heartHighPass.process(x);
-  y = heartHighPass2.process(y);
-  if (ENABLE_HUM_NOTCH) {
+  float y = listenHighPass.process(x);
+  y = listenHighPass2.process(y);
+  if (ENABLE_HUM_NOTCH && activeProfileUsesHeartMetrics) {
     y = humNotch50.process(y);
     if (ENABLE_HUM_HARMONIC_NOTCH) {
       y = humNotch100.process(y);
     }
   }
-  y = heartLowPass1.process(y);
-  y = heartLowPass2.process(y);
-  if (ENABLE_EXTRA_LOW_PASS_STAGE) {
-    y = heartLowPass3.process(y);
+  y = listenLowPass1.process(y);
+  y = listenLowPass2.process(y);
+  if (ENABLE_EXTRA_LOW_PASS_STAGE && activeProfileUsesHeartMetrics) {
+    y = listenLowPass3.process(y);
   }
 
   int32_t filteredLevel = (int32_t)fabsf(y);
@@ -6129,7 +6188,11 @@ void updateHeartMetrics(int16_t audio) {
 }
 
 void updateAgcAndPlotter(int16_t listenAudio, int16_t metricAudio) {
-  updateHeartMetrics(metricAudio);
+  if (activeProfileUsesHeartMetrics) {
+    updateHeartMetrics(metricAudio);
+  } else {
+    heartBpm = 0.0f;
+  }
 
   int32_t a = abs32(listenAudio);
 
@@ -6237,6 +6300,15 @@ void updateAgcAndPlotter(int16_t listenAudio, int16_t metricAudio) {
     Serial.print(">i2sSlot1ActiveWindows:");
     Serial.println(i2sSlot1Diagnostics.activeWindowCount);
 
+    Serial.print(">audioProfile:");
+    Serial.println(activeAudioProfileName);
+
+    Serial.print(">audioCaptureSlot:");
+    Serial.println(selectedAudioCaptureSlot);
+
+    Serial.print(">audioCaptureSlotSwitches:");
+    Serial.println(audioCaptureSlotSwitchCount);
+
     plotPeak = 0;
     rawPeak = 0;
     filteredPeak = 0;
@@ -6316,21 +6388,53 @@ void captureI2sFrame() {
         bytesRead / (sizeof(int32_t) * I2S_CHANNEL_COUNT);
     updateI2sSlotDiagnostics(micBuffer, samplesRead);
 
+    shcare::AudioSlotFrameStats slot0Stats;
+    shcare::AudioSlotFrameStats slot1Stats;
+    for (int i = 0; i < samplesRead; ++i) {
+      const int sampleOffset = i * I2S_CHANNEL_COUNT;
+      const int32_t shifted0 = micBuffer[sampleOffset] >> RAW_SHIFT;
+      const int32_t shifted1 = micBuffer[sampleOffset + 1] >> RAW_SHIFT;
+      const std::uint32_t absolute0 = static_cast<std::uint32_t>(abs32(shifted0));
+      const std::uint32_t absolute1 = static_cast<std::uint32_t>(abs32(shifted1));
+      slot0Stats.energy += static_cast<std::uint64_t>(
+          static_cast<std::int64_t>(shifted0) * shifted0);
+      slot1Stats.energy += static_cast<std::uint64_t>(
+          static_cast<std::int64_t>(shifted1) * shifted1);
+      if (absolute0 > slot0Stats.peak) {
+        slot0Stats.peak = absolute0;
+      }
+      if (absolute1 > slot1Stats.peak) {
+        slot1Stats.peak = absolute1;
+      }
+      slot0Stats.nonZeroSamples += shifted0 != 0 ? 1U : 0U;
+      slot1Stats.nonZeroSamples += shifted1 != 0 ? 1U : 0U;
+      slot0Stats.clippedSamples += absolute0 >= I2S_SLOT_CLIP_LEVEL ? 1U : 0U;
+      slot1Stats.clippedSamples += absolute1 >= I2S_SLOT_CLIP_LEVEL ? 1U : 0U;
+    }
+    const std::uint8_t nextCaptureSlot = shcare::selectAudioCaptureSlot(
+        slot0Stats, slot1Stats, selectedAudioCaptureSlot,
+        static_cast<std::size_t>(samplesRead));
+    if (nextCaptureSlot != selectedAudioCaptureSlot) {
+      selectedAudioCaptureSlot = nextCaptureSlot;
+      if (audioCaptureSlotSwitchCount != UINT32_MAX) {
+        ++audioCaptureSlotSwitchCount;
+      }
+    }
+
     AudioCaptureItem item;
     item.sampleCount = static_cast<std::uint16_t>(samplesRead);
     item.capturedAtMonotonicMs = static_cast<std::uint32_t>(millis());
     for (int i = 0; i < samplesRead; i++) {
       const int sampleOffset = i * I2S_CHANNEL_COUNT;
-      const int32_t rawA = micBuffer[sampleOffset];
-      const int32_t rawB = micBuffer[sampleOffset + 1];
-      const int32_t rawMixed = (int32_t)(((int64_t)rawA + rawB) / 2);
+      const int32_t rawSelected =
+          micBuffer[sampleOffset + selectedAudioCaptureSlot];
 
-      const int32_t rawLevel = abs32(rawMixed >> RAW_SHIFT);
+      const int32_t rawLevel = abs32(rawSelected >> RAW_SHIFT);
       if (rawLevel > rawPeak) {
         rawPeak = rawLevel;
       }
 
-      const float centered = preprocessRawSample(rawMixed);
+      const float centered = preprocessRawSample(rawSelected);
       const int16_t listen16 = processListenSample(centered);
       const int16_t metric16 = processMetricSample(centered);
 
@@ -6482,7 +6586,7 @@ void setup() {
   }
   Serial.println("ESPTouch V2 provisioning enabled; BLE provisioning disabled.");
   setupI2S(false);
-  setupHeartbeatFilters();
+  setupAudioFilters();
   if (!startAudioCaptureTask()) {
     markI2sCaptureDegraded("AUDIO_CAPTURE_TASK_START_FAILED");
   }

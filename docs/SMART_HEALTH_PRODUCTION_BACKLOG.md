@@ -2,6 +2,21 @@
 
 Last updated: 2026-09-03
 
+## 2026-09-03 audio and AI assistant release slice
+
+- [x] Add explicit heart/lung capture profiles across backend, ESP32-S3 firmware and Android; select a healthy physical mic slot per frame instead of averaging both inputs.
+- [x] Add private AI conversations, history, audited message exchange, attachments and tenant/personal-scope persistence through migration `059`.
+- [x] Restrict assistant context to backend-authorized patient/scan summaries; add prompt-injection, diagnosis/prescribing and emergency-escalation boundaries.
+- [x] Add an OpenAI-compatible server-only provider seam with HTTPS production validation, bounded timeout/response size and no credential exposure in readiness responses.
+- [x] Add patient/doctor Android assistant UX with history, file/image/audio attachment, live waveform, Vietnamese STT, stop-to-review and explicit send.
+- [x] Keep Platform Admin truthful: show signal-analysis and chat-provider readiness without accepting secrets in browser fields. Keep current Portal work doctor-focused; move new business/workspace UX expansion to future development.
+- [x] Pass local backend, Admin, Portal, Android and firmware source/build gates and record candidate hashes.
+- [ ] Apply migration `059`, deploy the backend candidate and verify the exact Render release marker plus authenticated conversation create/list/send/archive, personal-account scope, cross-tenant denial, private attachment upload/download and cleanup. Do not enable an external AI provider with PHI until its data-processing/privacy terms are approved.
+- [ ] Configure `AI_PROVIDER_ENDPOINT`, `AI_PROVIDER_API_KEY` and `AI_PROVIDER_MODEL` in Render only, then run one non-sensitive provider canary. Until then, the app must show provider unavailable rather than fabricate an answer.
+- [ ] Reconnect Xiaomi, install APK `B079E29D...0A881`, and pass patient/doctor history, voice permission, stop-to-review STT, file picker, dark/font-200%/TalkBack and lifecycle restoration on-device.
+- [ ] Reconnect COM9, flash firmware `8A038109...740D9`, and capture serial plus authenticated WSS evidence for both heart and lung profiles, healthy-slot switching, clear listening, durable scan and the existing OTA rollback chain.
+- [ ] Install a native C/C++ compiler only if native PlatformIO Unity execution is still required. This is not a substitute for target build or physical HIL.
+
 ## 2026-09-03 exact-device access live closure and remaining G4 gates
 
 - [x] Apply Supabase migration `058` and deploy the exact-device access backend on Render release `git-c5f9cfab384f`.

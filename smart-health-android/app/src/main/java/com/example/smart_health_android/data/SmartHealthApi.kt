@@ -1299,6 +1299,62 @@ class SmartHealthApi(
         parseAiChatSession(getJson("$baseUrl/ai/chat"))
     }
 
+    suspend fun listAiConversations(): AiConversationList = withContext(Dispatchers.IO) {
+        parseAiConversationList(getJson("$baseUrl/ai/conversations"))
+    }
+
+    suspend fun createAiConversation(title: String = ""): AiConversation = withContext(Dispatchers.IO) {
+        parseAiConversation(
+            postJson(
+                "$baseUrl/ai/conversations",
+                JSONObject().put("title", title),
+            ).getJSONObject("conversation"),
+        )
+    }
+
+    suspend fun getAiConversationSession(conversationId: String): AiChatSession = withContext(Dispatchers.IO) {
+        parseAiChatSession(getJson("$baseUrl/ai/conversations/${conversationId.urlEncode()}"))
+    }
+
+    suspend fun archiveAiConversation(conversationId: String): AiConversation = withContext(Dispatchers.IO) {
+        parseAiConversation(
+            deleteJson("$baseUrl/ai/conversations/${conversationId.urlEncode()}")
+                .getJSONObject("conversation"),
+        )
+    }
+
+    suspend fun sendAiConversationMessage(
+        conversationId: String,
+        message: String,
+        attachmentIds: List<String>,
+        idempotencyKey: String,
+    ): AiChatSession = withContext(Dispatchers.IO) {
+        parseAiChatSession(
+            postJson(
+                "$baseUrl/ai/conversations/${conversationId.urlEncode()}/messages",
+                JSONObject()
+                    .put("message", message)
+                    .put("attachmentIds", JSONArray(attachmentIds)),
+                idempotencyKey = idempotencyKey,
+            ),
+        )
+    }
+
+    suspend fun uploadAiAttachment(
+        conversationId: String,
+        fileName: String,
+        contentType: String,
+        bytes: ByteArray,
+    ): AiChatAttachment = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url("$baseUrl/ai/conversations/${conversationId.urlEncode()}/attachments")
+            .post(bytes.toRequestBody(contentType.toMediaType()))
+            .header("X-File-Name", fileName)
+            .withAuth()
+            .build()
+        parseAiChatAttachment(executeJson(request).getJSONObject("attachment"))
+    }
+
     suspend fun getSignalAnalysisStatus(): SignalAnalysisStatus = withContext(Dispatchers.IO) {
         parseSignalAnalysisStatus(getJson("$baseUrl/ai/settings"))
     }
@@ -4478,9 +4534,50 @@ class SmartHealthApi(
             id = json.optString("id"),
             role = json.optString("role"),
             content = json.optString("content"),
-            createdAt = json.stringOrNull("createdAt")
+            conversationId = json.optString("conversationId"),
+            references = json.optJSONArray("references").orEmpty().map(::parseAiChatReference),
+            createdAt = json.stringOrNull("createdAt"),
         )
     }
+
+    private fun parseAiChatReference(json: JSONObject): AiChatReference = AiChatReference(
+        type = json.optString("type"),
+        id = json.optString("id"),
+        label = json.optString("label"),
+        observedAt = json.stringOrNull("observedAt"),
+    )
+
+    private fun parseAiConversation(json: JSONObject): AiConversation = AiConversation(
+        id = json.optString("id"),
+        title = json.optString("title", "Cuộc trò chuyện mới"),
+        archivedAt = json.stringOrNull("archivedAt"),
+        createdAt = json.stringOrNull("createdAt"),
+        updatedAt = json.stringOrNull("updatedAt"),
+    )
+
+    private fun parseAiChatAttachment(json: JSONObject): AiChatAttachment = AiChatAttachment(
+        id = json.optString("id"),
+        conversationId = json.optString("conversationId"),
+        messageId = json.optString("messageId"),
+        name = json.optString("name"),
+        contentType = json.optString("contentType"),
+        byteSize = json.optLong("byteSize"),
+        sha256 = json.optString("sha256"),
+        createdAt = json.stringOrNull("createdAt"),
+        providerInterpretation = json.optString("providerInterpretation", "not_enabled"),
+    )
+
+    private fun parseAiAvailability(json: JSONObject): AiChatAvailability = AiChatAvailability(
+        available = json.optBoolean("available", false),
+        provider = json.optString("provider"),
+        reason = json.optString("reason"),
+    )
+
+    private fun parseAiConversationList(json: JSONObject): AiConversationList = AiConversationList(
+        conversations = json.optJSONArray("conversations").orEmpty().map(::parseAiConversation),
+        availability = json.optJSONObject("availability")?.let(::parseAiAvailability)
+            ?: AiChatAvailability(available = false, reason = "not_configured"),
+    )
 
     private fun parseAiChatSession(json: JSONObject): AiChatSession {
         val availabilityJson = json.optJSONObject("availability")
@@ -4490,16 +4587,13 @@ class SmartHealthApi(
                 provider = json.optString("provider"),
                 reason = json.optString("reason"),
             )
-        } else {
-            AiChatAvailability(
-                available = availabilityJson.optBoolean("available", false),
-                provider = availabilityJson.optString("provider"),
-                reason = availabilityJson.optString("reason"),
-            )
-        }
+        } else parseAiAvailability(availabilityJson)
         return AiChatSession(
             messages = json.optJSONArray("messages").orEmpty().map(::parseAiChatMessage),
             availability = availability,
+            conversation = json.optJSONObject("conversation")?.let(::parseAiConversation),
+            attachments = json.optJSONArray("attachments").orEmpty().map(::parseAiChatAttachment),
+            references = json.optJSONArray("references").orEmpty().map(::parseAiChatReference),
         )
     }
 

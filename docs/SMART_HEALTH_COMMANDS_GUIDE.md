@@ -2,6 +2,61 @@
 
 Last updated: 2026-09-03
 
+## 2026-09-03 audio and AI assistant candidate verification
+
+Backend contract and adjacent regression gates:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\web-monitor
+npm.cmd run check
+npm.cmd run smoke:ai-chat
+npm.cmd run smoke:audio-protocol
+npm.cmd run smoke:audio-processing-worker
+npm.cmd run smoke:scan-audio-upload
+npm.cmd run smoke:clinical-workflow
+npm.cmd run smoke:device-security
+```
+
+Provider configuration belongs only in Render secret environment variables:
+
+```text
+AI_PROVIDER_ENDPOINT=https://provider.example/v1/chat/completions
+AI_PROVIDER_API_KEY=<server-only secret>
+AI_PROVIDER_MODEL=<approved model>
+AI_PROVIDER_NAME=openai_compatible
+AI_PROVIDER_TIMEOUT_MS=15000
+```
+
+Do not put these values in Android, Firebase Hosting, Git, screenshots or logs. Production rejects non-HTTPS endpoints. The current attachment contract stores image/PDF/text/audio privately but sends only file metadata to the provider.
+
+Android build and physical test commands:
+
+```powershell
+cd D:\Study\KLTN\smart-health-android
+.\gradlew.bat testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest --no-daemon --console=plain
+
+$adb = Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'
+& $adb devices -l
+& $adb install -r app\build\outputs\apk\debug\app-debug.apk
+& $adb install -r -t app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
+& $adb shell am instrument -w -r -e class com.example.smart_health_android.ui.screens.AIAssistantScreenTest com.example.smart_health_android.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+The recorded candidate APK is SHA-256 `B079E29D90B193B00566DDBB71E9079622155E7619E1B38FBEB137032EF0A881`; AndroidTest is `BEE81CAF5A51F748BB758D3532B4F16DEF3EC6F300786A5D843903385774DFA1`. A physical PASS also requires a signed-in patient and doctor to exercise history, stop-to-review speech, attachments, process recreation, dark theme, font 200% and TalkBack.
+
+Firmware source/build and physical upload:
+
+```powershell
+cd D:\Study\KLTN\smart-health-embedded\MSM261S4030H0
+node --test test\*_test.js
+$pio = 'C:\Users\baobe\.platformio\penv\Scripts\platformio.exe'
+& $pio run -e esp32-s3-devkitm-1
+& $pio device list
+& $pio run -e esp32-s3-devkitm-1 -t upload --upload-port COM9
+```
+
+The recorded firmware candidate is SHA-256 `8A03810928FF8FE70F42B3191A1C3835EB4A3430DEDB81963F4B1F6FCAB740D9`. Upload only after COM9 is positively rediscovered. Count heart/lung quality as physical proof only after serial/WSS confirms the selected capture profile and healthy source slot while the phone receives intelligible audio; a successful compile is not listening evidence.
+
 ## 2026-09-03 production access-code release verification
 
 Current cloud evidence:

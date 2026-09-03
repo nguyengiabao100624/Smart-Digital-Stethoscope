@@ -67,10 +67,7 @@ data class PatientDashboardFeatureAccess(
     val canViewRecords: Boolean = false,
     val canManageDevice: Boolean = false,
     val canViewAppointments: Boolean = false,
-    /**
-     * Assistant availability is intentionally not inferred from authentication alone.
-     * It remains hidden until a provider-backed availability contract is authoritative.
-     */
+    /** Route visibility is permission-bound; provider availability is shown truthfully in the assistant screen. */
     val canUseAssistant: Boolean = false,
 )
 
@@ -119,7 +116,7 @@ fun bindPatientDashboardRouteAccess(
             canViewRecords = canOpen(ShcareMobileRoute.Records),
             canManageDevice = context.capabilities.any(MobileRouteCapabilities.DeviceManage::contains),
             canViewAppointments = canOpen(ShcareMobileRoute.Appointments),
-            canUseAssistant = false,
+            canUseAssistant = canOpen(ShcareMobileRoute.AiAssistant),
         ),
     )
 }

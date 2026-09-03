@@ -109,6 +109,10 @@ const EMPTY_OTA_FORM: OtaDraft = {
   minimumProtocolVersion: "1",
 };
 
+const DEVICE_VIEW_ACCESS_LABEL = "Xem & kết nối Wi-Fi";
+const DEVICE_WIFI_TRANSPORT_LABEL = "ESPTouch V2 Broadcast";
+const DEVICE_SOFTAP_RECOVERY_COPY = "SoftAP chỉ là phương án khôi phục vật lý";
+
 function getCommandOperationPresentation(command: SmartHealthDeviceCommand) {
   if (command.type === "ota.update" && command.state === "applied") {
     return DEVICE_OTA_STATUS_PRESENTATION.rebooting;
@@ -1351,11 +1355,12 @@ export function Devices() {
                     Cấu hình Wi‑Fi cho thiết bị
                   </div>
                   <p className="text-sm leading-6 text-muted-foreground">
-                    Admin tạo mã/QR truy cập cho đúng thiết bị và chọn phạm vi quyền. Mã “Xem & kết
-                    nối Wi-Fi” cho phép mở thông tin và cấu hình ESPTouch V2 Broadcast; mã “Quản lý
-                    thiết bị” bổ sung các thao tác quản trị trên đúng thiết bị đó. Người dùng không
-                    nhập Device ID, device secret hoặc mật khẩu Wi-Fi ở màn bàn giao. SoftAP chỉ là
-                    phương án khôi phục vật lý có thời hạn, không thuộc luồng chính.
+                    Admin tạo mã/QR truy cập cho đúng thiết bị và chọn phạm vi quyền. Mã “
+                    {DEVICE_VIEW_ACCESS_LABEL}” cho phép mở thông tin và cấu hình{" "}
+                    {DEVICE_WIFI_TRANSPORT_LABEL}; mã “Quản lý thiết bị” bổ sung các thao tác quản
+                    trị trên đúng thiết bị đó. Người dùng không nhập Device ID, device secret hoặc
+                    mật khẩu Wi-Fi ở màn bàn giao. {DEVICE_SOFTAP_RECOVERY_COPY}, có thời hạn và
+                    không thuộc luồng chính.
                   </p>
                 </div>
 

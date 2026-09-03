@@ -1101,6 +1101,44 @@ void test_audio_session_contract_accepts_v2_and_rejects_legacy_emission() {
   TEST_ASSERT_FALSE(decision.accepted());
 }
 
+void test_audio_capture_profiles_are_explicit_and_bounded() {
+  const auto heart = shcare::resolveAudioCaptureProfile("heart");
+  TEST_ASSERT_TRUE(heart.accepted());
+  TEST_ASSERT_EQUAL(shcare::AudioCaptureProfile::Heart, heart.profile);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 30.0f, heart.lowCutHz);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 220.0f, heart.highCutHz);
+  TEST_ASSERT_TRUE(heart.heartMetricsEnabled);
+
+  const auto lung = shcare::resolveAudioCaptureProfile("lung");
+  TEST_ASSERT_TRUE(lung.accepted());
+  TEST_ASSERT_EQUAL(shcare::AudioCaptureProfile::Lung, lung.profile);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 80.0f, lung.lowCutHz);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 2000.0f, lung.highCutHz);
+  TEST_ASSERT_FALSE(lung.heartMetricsEnabled);
+
+  const auto unsupported = shcare::resolveAudioCaptureProfile("raw");
+  TEST_ASSERT_FALSE(unsupported.accepted());
+  TEST_ASSERT_EQUAL(shcare::AudioCaptureProfile::Unsupported,
+                    unsupported.profile);
+}
+
+void test_audio_slot_selection_avoids_weak_and_clipped_channels() {
+  shcare::AudioSlotFrameStats healthy{1200000ULL, 4100U, 128U, 0U};
+  shcare::AudioSlotFrameStats weak{2500ULL, 90U, 128U, 0U};
+  TEST_ASSERT_EQUAL_UINT8(
+      0, shcare::selectAudioCaptureSlot(healthy, weak, 1, 128));
+
+  shcare::AudioSlotFrameStats clipped{8000000ULL, 131071U, 128U, 12U};
+  shcare::AudioSlotFrameStats clean{700000ULL, 3200U, 128U, 0U};
+  TEST_ASSERT_EQUAL_UINT8(
+      1, shcare::selectAudioCaptureSlot(clipped, clean, 0, 128));
+
+  shcare::AudioSlotFrameStats nearCurrent{1000000ULL, 3600U, 128U, 0U};
+  shcare::AudioSlotFrameStats nearCandidate{1200000ULL, 3900U, 128U, 0U};
+  TEST_ASSERT_EQUAL_UINT8(
+      0, shcare::selectAudioCaptureSlot(nearCurrent, nearCandidate, 0, 128));
+}
+
 void test_builds_audio_v2_frame_in_network_byte_order() {
   const int16_t samples[] = {-1, 0, 1, 32767};
   uint8_t frame[128] = {};
@@ -1531,6 +1569,8 @@ void runTests() {
   RUN_TEST(test_serializes_stable_ack_progress_and_reconnect_result_states);
   RUN_TEST(test_accepts_audio_session_start_command);
   RUN_TEST(test_audio_session_contract_accepts_v2_and_rejects_legacy_emission);
+  RUN_TEST(test_audio_capture_profiles_are_explicit_and_bounded);
+  RUN_TEST(test_audio_slot_selection_avoids_weak_and_clipped_channels);
   RUN_TEST(test_builds_audio_v2_frame_in_network_byte_order);
   RUN_TEST(test_rejects_invalid_audio_v2_identity_and_capacity);
   RUN_TEST(test_accepts_complete_ota_manifest_golden_fixture);

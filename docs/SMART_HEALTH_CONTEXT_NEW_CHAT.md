@@ -2,6 +2,17 @@
 
 Last updated: 2026-09-03
 
+## 2026-09-03 audio profiles and authenticated AI assistant candidate
+
+- Android now exposes one Shcare-styled AI assistant to both patient and doctor accounts. It has server-backed conversation history, new/select conversation, image/PDF/text/audio attachments, a lifecycle-safe Vietnamese speech recognizer, a 28-bar live voice waveform, stop-to-review transcription and explicit send. Stopping a recording never sends a message automatically.
+- The backend owns the conversation/attachment contract. Migration `059_ai_conversations_and_attachments.sql` adds private, user/workspace-scoped conversations and attachment metadata; direct `anon`/`authenticated` table access is revoked. The assistant receives only backend-authorized patient/scan summaries, ignores instructions embedded in records/files, refuses diagnosis/prescribing, emits emergency escalation copy and keeps provider credentials server-side.
+- The OpenAI-compatible provider seam is disabled until `AI_PROVIDER_ENDPOINT`, `AI_PROVIDER_API_KEY` and `AI_PROVIDER_MODEL` are configured. `AI_PROVIDER_NAME` and bounded `AI_PROVIDER_TIMEOUT_MS` are optional. Attachments are stored privately but the provider currently receives metadata only, so the UI/API must not claim image, PDF or audio interpretation.
+- Audio capture now has explicit `heart` and `lung` profiles across backend, firmware and Android. Firmware selects one healthy physical microphone slot per frame with hysteresis instead of averaging two capsules; heart uses the bounded heart-band profile and lung uses the wider breath-sound profile. Transport remains PCM16 mono at 16 kHz and device online status still requires authenticated backend presence.
+- Source/build gates PASS: backend AI `12/12`, audio protocol `4/4`, audio worker `6/6`, scan upload `15/15`, clinical workflow `8/8`, device security `87/87`; Admin contracts `209/209` plus lint/build; Portal contracts `141/141`, auth `392` plus lint/build; Android unit/build/AndroidTest compile; firmware source contracts `5/5` and production target build.
+- Candidate artifacts: Android debug APK SHA-256 `B079E29D90B193B00566DDBB71E9079622155E7619E1B38FBEB137032EF0A881`; AndroidTest APK `BEE81CAF5A51F748BB758D3532B4F16DEF3EC6F300786A5D843903385774DFA1`; firmware `8A03810928FF8FE70F42B3191A1C3835EB4A3430DEDB81963F4B1F6FCAB740D9`.
+- Runtime remains **PARTIAL**: this terminal currently lists neither an ADB target nor a serial port. Do not claim Xiaomi UI/STT/file-picker/TalkBack or COM9 heart/lung/WSS/scan/OTA HIL until they are rediscovered and the exact artifacts above are installed/flashed and exercised. Native PlatformIO Unity remains host-blocked because no `gcc/g++` is installed.
+- Product scope for this slice: keep and finish the doctor Portal surface; do not expand the workspace/business Portal now. Existing business routes stay intact and their expansion is recorded as future development. Platform Admin retains system-wide status/control and never accepts provider secrets through the browser.
+
 ## 2026-09-03 exact-device access production closure
 
 - Exact-device access is live end-to-end at the cloud boundary. Platform Admin creates one-time `SHC-...` codes/QRs for one device with either `viewer` (view + Wi-Fi) or `manager` (manage that exact device). Android/Portal redeem only the opaque code; user-facing handover never requires a Device ID, device secret or factory claim artifact.

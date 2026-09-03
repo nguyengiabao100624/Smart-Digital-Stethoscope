@@ -10,12 +10,14 @@ data class LiveAudioExpectation(
     val patientId: String,
     val deviceId: String,
     val scanId: String,
+    val audioProfile: String,
 ) {
     init {
         require(workspaceId.isNotBlank()) { "Workspace ID is required" }
         require(patientId.isNotBlank()) { "Patient ID is required" }
         require(deviceId.isNotBlank()) { "Device ID is required" }
         require(scanId.isNotBlank()) { "Scan ID is required" }
+        require(audioProfile in setOf("heart", "lung")) { "Audio profile is unsupported" }
     }
 }
 
@@ -33,6 +35,7 @@ data class LiveAudioSession(
     val deviceId: String,
     val scanId: String,
     val sessionId: String,
+    val audioProfile: String,
     val sampleRate: Int,
     val startedAt: String,
 ) {
@@ -108,6 +111,8 @@ object LiveAudioTextEventParser {
         require(json.requiredInt("channels") == 1) { "Audio must be mono" }
         require(json.requiredInt("bitsPerSample") == 16) { "Audio must be PCM16" }
         require(json.requiredString("encoding") == "pcm_s16le") { "Unsupported PCM encoding" }
+        val audioProfile = json.requiredString("audioProfile")
+        require(audioProfile == expected.audioProfile) { "Audio profile does not match the scan" }
 
         val identity = json.identity()
         requireExpectedIdentity(identity, expected)
@@ -122,6 +127,7 @@ object LiveAudioTextEventParser {
                 deviceId = identity.deviceId,
                 scanId = identity.scanId,
                 sessionId = identity.sessionId,
+                audioProfile = audioProfile,
                 sampleRate = SAMPLE_RATE,
                 startedAt = startedAt,
             ),

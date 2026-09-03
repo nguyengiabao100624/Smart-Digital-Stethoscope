@@ -13,6 +13,7 @@ class LiveAudioContractTest {
         patientId = "patient_a",
         deviceId = "device_a",
         scanId = "scan_a",
+        audioProfile = "lung",
     )
 
     @Test
@@ -29,6 +30,7 @@ class LiveAudioContractTest {
         assertEquals("device_a", session.deviceId)
         assertEquals("scan_a", session.scanId)
         assertEquals("session_a", session.sessionId)
+        assertEquals("lung", session.audioProfile)
     }
 
     @Test
@@ -54,6 +56,15 @@ class LiveAudioContractTest {
         )
         assertTrue(
             LiveAudioTextEventParser.parse(rawPcm, expected, null) is LiveAudioTextEvent.Rejected,
+        )
+    }
+
+    @Test
+    fun audioProfileMustMatchTheRequestedScanMode() {
+        val wrongProfile = metadata().replace("\"audioProfile\": \"lung\"", "\"audioProfile\": \"heart\"")
+
+        assertTrue(
+            LiveAudioTextEventParser.parse(wrongProfile, expected, null) is LiveAudioTextEvent.Rejected,
         )
     }
 
@@ -218,6 +229,7 @@ class LiveAudioContractTest {
           "deviceId": "device_a",
           "scanId": "scan_a",
           "sessionId": "session_a",
+          "audioProfile": "lung",
           "sampleRate": 16000,
           "channels": 1,
           "bitsPerSample": 16,

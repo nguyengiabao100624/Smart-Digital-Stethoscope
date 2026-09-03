@@ -70,7 +70,7 @@ class LiveAudioClient(
 
     private val audioAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_MEDIA)
-        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
         .build()
 
     private val audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)

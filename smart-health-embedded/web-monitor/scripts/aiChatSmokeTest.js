@@ -59,6 +59,19 @@ function seedDb() {
             createdAt,
             updatedAt: createdAt,
           },
+          {
+            id: "usr_personal_patient",
+            role: "patient",
+            requestedRole: "patient",
+            roleRequestStatus: "approved",
+            accountStatus: "active",
+            email: "personal-patient-ai@test.local",
+            password: "12345678",
+            organizationId: "",
+            patientId: "pat_personal",
+            createdAt,
+            updatedAt: createdAt,
+          },
         ],
         memberships: [
           { id: "mem_alpha", userId: "usr_alpha", organizationId: "org_alpha", role: "workspace_admin", createdAt },
@@ -93,9 +106,79 @@ function seedDb() {
         auditLogs: [],
         notifications: [],
         devices: [],
-        patients: [],
+        patients: [
+          {
+            id: "pat_alpha",
+            patientCode: "ALPHA-001",
+            name: "Người bệnh Alpha",
+            organizationId: "org_alpha",
+            ownerUserId: "usr_alpha",
+            accountUserId: "usr_alpha",
+            profileType: "self",
+            relationship: "self",
+            createdAt,
+            updatedAt: createdAt,
+          },
+          {
+            id: "pat_beta",
+            patientCode: "BETA-001",
+            name: "Người bệnh Beta riêng tư",
+            organizationId: "org_beta",
+            ownerUserId: "usr_beta",
+            accountUserId: "usr_beta",
+            profileType: "self",
+            relationship: "self",
+            createdAt,
+            updatedAt: createdAt,
+          },
+          {
+            id: "pat_personal",
+            patientCode: "PERSONAL-001",
+            name: "Người dùng cá nhân",
+            organizationId: "",
+            ownerUserId: "usr_personal_patient",
+            accountUserId: "usr_personal_patient",
+            profileType: "self",
+            relationship: "self",
+            createdAt,
+            updatedAt: createdAt,
+          },
+        ],
         appointments: [],
-        scans: [],
+        scans: [
+          {
+            id: "scan_alpha_heart",
+            patientId: "pat_alpha",
+            organizationId: "org_alpha",
+            mode: "heart",
+            bodyPosition: "mỏm tim",
+            status: "completed",
+            aiLabel: "signal_quality_acceptable",
+            aiSummary: "Tín hiệu tim đủ chất lượng để bác sĩ xem lại",
+            createdAt,
+            startedAt: createdAt,
+          },
+          {
+            id: "scan_beta_lung_private",
+            patientId: "pat_beta",
+            organizationId: "org_beta",
+            mode: "lung",
+            status: "completed",
+            aiSummary: "BETA-CONTEXT-MUST-NOT-LEAK",
+            createdAt,
+            startedAt: createdAt,
+          },
+          {
+            id: "scan_personal_heart",
+            patientId: "pat_personal",
+            organizationId: "",
+            mode: "heart",
+            status: "completed",
+            aiSummary: "Tín hiệu cá nhân đủ chất lượng để nghe lại",
+            createdAt,
+            startedAt: createdAt,
+          },
+        ],
       },
       null,
       2,
@@ -349,6 +432,141 @@ test("the same Idempotency-Key is isolated across AI chat tenants", async () => 
   const aiEntries = persisted.idempotencyKeys.filter((item) => item.operation === "ai.chat");
   assert.equal(aiEntries.some((item) => item.scope === "usr_alpha:org_alpha" && item.key === "ai-shared-key"), true);
   assert.equal(aiEntries.some((item) => item.scope === "usr_beta:org_beta" && item.key === "ai-shared-key"), true);
+});
+
+test("conversation history, private attachments and authorized health context remain tenant scoped", async () => {
+  const alphaToken = await login("alpha-ai@test.local");
+  const authorization = { Authorization: `Bearer ${alphaToken}` };
+  const created = await requestJson("/api/v1/ai/conversations", {
+    method: "POST",
+    headers: { ...authorization, "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  assert.equal(created.response.status, 201, JSON.stringify(created.body));
+  const conversationId = created.body.conversation.id;
+
+  const attachmentResponse = await fetch(
+    `http://127.0.0.1:${backendPort}/api/v1/ai/conversations/${conversationId}/attachments`,
+    {
+      method: "POST",
+      headers: {
+        ...authorization,
+        "Content-Type": "application/pdf",
+        "X-File-Name": "ket-qua.pdf",
+      },
+      body: Buffer.from("%PDF-1.4\nShcare test attachment"),
+    },
+  );
+  const attachmentBody = JSON.parse(await attachmentResponse.text());
+  assert.equal(attachmentResponse.status, 201, JSON.stringify(attachmentBody));
+  assert.equal(attachmentBody.attachment.providerInterpretation, "not_enabled");
+  assert.equal(Object.hasOwn(attachmentBody.attachment, "objectKey"), false);
+
+  const providerCallsBefore = providerRequests.length;
+  const message = await requestJson(`/api/v1/ai/conversations/${conversationId}/messages`, {
+    method: "POST",
+    headers: {
+      ...authorization,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "ai-conversation-message-1",
+    },
+    body: JSON.stringify({
+      message: "Giải thích lượt đo tim gần nhất của tôi",
+      attachmentIds: [attachmentBody.attachment.id],
+    }),
+  });
+  assert.equal(message.response.status, 200, JSON.stringify(message.body));
+  assert.equal(message.body.conversation.title, "Giải thích lượt đo tim gần nhất của tôi");
+  assert.deepEqual(message.body.references.filter((item) => item.type === "scan").map((item) => item.id), ["scan_alpha_heart"]);
+  assert.equal(message.body.attachments[0].id, attachmentBody.attachment.id);
+  assert.equal(message.body.attachments[0].messageId, message.body.messages.at(-2).id);
+  assert.equal(providerRequests.length - providerCallsBefore, 1);
+  const providerPayload = providerRequests.at(-1).body;
+  const providerText = JSON.stringify(providerPayload.messages);
+  assert.equal(providerText.includes("scan_alpha_heart"), true);
+  assert.equal(providerText.includes("BETA-CONTEXT-MUST-NOT-LEAK"), false);
+  assert.equal(providerText.includes("scan_beta_lung_private"), false);
+  assert.match(providerPayload.messages[0].content, /Không chẩn đoán/);
+
+  const replay = await requestJson(`/api/v1/ai/conversations/${conversationId}/messages`, {
+    method: "POST",
+    headers: {
+      ...authorization,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "ai-conversation-message-1",
+    },
+    body: JSON.stringify({
+      message: "Giải thích lượt đo tim gần nhất của tôi",
+      attachmentIds: [attachmentBody.attachment.id],
+    }),
+  });
+  assert.equal(replay.response.status, 200, JSON.stringify(replay.body));
+  assert.equal(replay.body.idempotent, true);
+  assert.equal(replay.body.attachments[0].messageId, message.body.messages.at(-2).id);
+
+  const reusedAttachment = await requestJson(`/api/v1/ai/conversations/${conversationId}/messages`, {
+    method: "POST",
+    headers: {
+      ...authorization,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "ai-conversation-message-2",
+    },
+    body: JSON.stringify({
+      message: "Dùng lại tệp",
+      attachmentIds: [attachmentBody.attachment.id],
+    }),
+  });
+  assert.equal(reusedAttachment.response.status, 409, JSON.stringify(reusedAttachment.body));
+  assert.equal(reusedAttachment.body.error.code, "AI_ATTACHMENT_ALREADY_USED");
+
+  const detail = await requestJson(`/api/v1/ai/conversations/${conversationId}`, { headers: authorization });
+  assert.equal(detail.response.status, 200, JSON.stringify(detail.body));
+  assert.equal(detail.body.messages.length, 2);
+  assert.equal(detail.body.attachments.length, 1);
+  assert.equal(detail.body.attachments[0].messageId, detail.body.messages[0].id);
+
+  const betaToken = await login("beta-ai@test.local");
+  const denied = await requestJson(`/api/v1/ai/conversations/${conversationId}`, {
+    headers: { Authorization: `Bearer ${betaToken}` },
+  });
+  assert.equal(denied.response.status, 404, JSON.stringify(denied.body));
+
+  const archived = await requestJson(`/api/v1/ai/conversations/${conversationId}`, {
+    method: "DELETE",
+    headers: authorization,
+  });
+  assert.equal(archived.response.status, 200, JSON.stringify(archived.body));
+  const afterArchive = await requestJson(`/api/v1/ai/conversations/${conversationId}`, { headers: authorization });
+  assert.equal(afterArchive.response.status, 404, JSON.stringify(afterArchive.body));
+});
+
+test("personal patient without a workspace can use a private conversation and authorized self data", async () => {
+  const token = await login("personal-patient-ai@test.local");
+  const authorization = { Authorization: `Bearer ${token}` };
+  const created = await requestJson("/api/v1/ai/conversations", {
+    method: "POST",
+    headers: { ...authorization, "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  assert.equal(created.response.status, 201, JSON.stringify(created.body));
+
+  const reply = await requestJson(`/api/v1/ai/conversations/${created.body.conversation.id}/messages`, {
+    method: "POST",
+    headers: {
+      ...authorization,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "personal-patient-message-1",
+    },
+    body: JSON.stringify({ message: "Giải thích lượt đo gần nhất của tôi" }),
+  });
+  assert.equal(reply.response.status, 200, JSON.stringify(reply.body));
+  assert.deepEqual(reply.body.references.filter((item) => item.type === "scan").map((item) => item.id), ["scan_personal_heart"]);
+  assert.equal(JSON.stringify(providerRequests.at(-1).body.messages).includes("scan_beta_lung_private"), false);
+  const persisted = readPersistedDb();
+  assert.equal(
+    persisted.chatMessages.filter((item) => item.userId === "usr_personal_patient" && item.organizationId === "").length,
+    2,
+  );
 });
 
 test("provider timeout does not create local chat history or a success audit", async () => {

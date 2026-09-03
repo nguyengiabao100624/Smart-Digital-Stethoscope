@@ -102,9 +102,14 @@ assert.match(captureTask, /captureI2sFrame\(\)/);
 assert.doesNotMatch(runtimeLoop, /captureI2sFrame\(\)/);
 assert.match(
   capture,
-  /const int32_t rawMixed = \(int32_t\)\(\(\(int64_t\)rawA \+ rawB\) \/ 2\)/,
-  "the canonical averaged mono PCM source must remain unchanged",
+  /selectAudioCaptureSlot/,
+  "mono capture must choose a healthy physical slot instead of cancelling or attenuating two unequal channels",
 );
+assert.match(capture, /rawSelected/);
+assert.doesNotMatch(capture, /rawMixed/);
+assert.match(source, /Auscultation profile ready:/);
+assert.match(source, /audioProfile/);
+assert.match(source, /audioCaptureSlot/);
 
 for (const label of [
   ">i2sSlot0Rms:",

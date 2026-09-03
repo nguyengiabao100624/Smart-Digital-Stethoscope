@@ -29,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Notifications
@@ -116,6 +117,7 @@ fun PatientDashboardScreen(
     onNavigateToNewScan: () -> Unit,
     onNavigateToRecords: () -> Unit,
     onNavigateToAppointments: () -> Unit,
+    onNavigateToAssistant: () -> Unit,
     onNavigateToRecordDetail: (String) -> Unit,
     onOpenWorkspaceSwitcher: () -> Unit,
     viewModel: PatientDashboardViewModel = viewModel(
@@ -159,6 +161,7 @@ fun PatientDashboardScreen(
         onNavigateToNewScan = onNavigateToNewScan,
         onNavigateToRecords = onNavigateToRecords,
         onNavigateToAppointments = onNavigateToAppointments,
+        onNavigateToAssistant = onNavigateToAssistant,
         onNavigateToRecordDetail = onNavigateToRecordDetail,
         onOpenWorkspaceSwitcher = onOpenWorkspaceSwitcher,
     )
@@ -175,6 +178,7 @@ internal fun PatientDashboardContent(
     onNavigateToNewScan: () -> Unit,
     onNavigateToRecords: () -> Unit,
     onNavigateToAppointments: () -> Unit,
+    onNavigateToAssistant: () -> Unit,
     onNavigateToRecordDetail: (String) -> Unit,
     onOpenWorkspaceSwitcher: () -> Unit,
 ) {
@@ -255,6 +259,7 @@ internal fun PatientDashboardContent(
                 onNavigateToNewScan = onNavigateToNewScan,
                 onNavigateToRecords = onNavigateToRecords,
                 onNavigateToAppointments = onNavigateToAppointments,
+                onNavigateToAssistant = onNavigateToAssistant,
                 onNavigateToRecordDetail = onNavigateToRecordDetail,
             )
         }
@@ -419,6 +424,7 @@ private fun PatientDashboardReadyContent(
     onNavigateToNewScan: () -> Unit,
     onNavigateToRecords: () -> Unit,
     onNavigateToAppointments: () -> Unit,
+    onNavigateToAssistant: () -> Unit,
     onNavigateToRecordDetail: (String) -> Unit,
 ) {
     val spacing = ShcareTheme.spacing
@@ -518,6 +524,7 @@ private fun PatientDashboardReadyContent(
                                 onNavigateToNewScan = onNavigateToNewScan,
                                 onNavigateToRecords = onNavigateToRecords,
                                 onNavigateToAppointments = onNavigateToAppointments,
+                                onNavigateToAssistant = onNavigateToAssistant,
                             )
                         }
                     }
@@ -551,6 +558,7 @@ private fun PatientDashboardReadyContent(
                                     onNavigateToNewScan = onNavigateToNewScan,
                                     onNavigateToRecords = onNavigateToRecords,
                                     onNavigateToAppointments = onNavigateToAppointments,
+                                    onNavigateToAssistant = onNavigateToAssistant,
                                 )
                             }
                         }
@@ -992,6 +1000,7 @@ private fun PatientDashboardQuickActions(
     onNavigateToNewScan: () -> Unit,
     onNavigateToRecords: () -> Unit,
     onNavigateToAppointments: () -> Unit,
+    onNavigateToAssistant: () -> Unit,
 ) {
     val actions = buildList {
         if (features.canStartScan) {
@@ -1024,6 +1033,17 @@ private fun PatientDashboardQuickActions(
                     testTag = "patient-dashboard.action.appointments",
                     tone = PatientDashboardQuickActionTone.Secondary,
                     action = onNavigateToAppointments,
+                ),
+            )
+        }
+        if (features.canUseAssistant) {
+            add(
+                PatientDashboardQuickAction(
+                    icon = Icons.Default.ChatBubbleOutline,
+                    labelRes = R.string.ai_assistant_short_label,
+                    testTag = "patient-dashboard.action.assistant",
+                    tone = PatientDashboardQuickActionTone.Secondary,
+                    action = onNavigateToAssistant,
                 ),
             )
         }
@@ -1413,4 +1433,4 @@ private fun patientDashboardMessageWithRequestId(
 }
 
 private val PatientDashboardFeatureAccess.hasAnyQuickAction: Boolean
-    get() = canStartScan || canViewRecords || canViewAppointments
+    get() = canStartScan || canViewRecords || canViewAppointments || canUseAssistant

@@ -234,6 +234,7 @@ class LiveMonitoringViewModel(
                 patientId = scan.patientId,
                 deviceId = scan.deviceId,
                 scanId = scan.id,
+                audioProfile = scan.mode.ifBlank { "heart" },
             )
         }
         _uiState.value = LiveMonitoringUiState(

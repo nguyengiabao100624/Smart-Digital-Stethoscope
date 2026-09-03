@@ -986,7 +986,41 @@ data class AiChatMessage(
     val id: String,
     val role: String,
     val content: String,
-    val createdAt: String? = null
+    val conversationId: String = "",
+    val references: List<AiChatReference> = emptyList(),
+    val createdAt: String? = null,
+)
+
+data class AiChatReference(
+    val type: String,
+    val id: String,
+    val label: String = "",
+    val observedAt: String? = null,
+)
+
+data class AiConversation(
+    val id: String,
+    val title: String,
+    val archivedAt: String? = null,
+    val createdAt: String? = null,
+    val updatedAt: String? = null,
+)
+
+data class AiChatAttachment(
+    val id: String,
+    val conversationId: String,
+    val messageId: String = "",
+    val name: String,
+    val contentType: String,
+    val byteSize: Long,
+    val sha256: String = "",
+    val createdAt: String? = null,
+    val providerInterpretation: String = "not_enabled",
+)
+
+data class AiConversationList(
+    val conversations: List<AiConversation>,
+    val availability: AiChatAvailability,
 )
 
 data class AiChatAvailability(
@@ -998,6 +1032,9 @@ data class AiChatAvailability(
 data class AiChatSession(
     val messages: List<AiChatMessage>,
     val availability: AiChatAvailability,
+    val conversation: AiConversation? = null,
+    val attachments: List<AiChatAttachment> = emptyList(),
+    val references: List<AiChatReference> = emptyList(),
 )
 
 data class SignalAnalysisSettings(

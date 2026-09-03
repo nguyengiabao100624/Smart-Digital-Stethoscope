@@ -36,6 +36,14 @@ const {
   verifyTotpCode,
 } = require("./src/twoFactorAuth");
 const { processAudioFile } = require("./src/audioProcessing");
+const {
+  AI_ATTACHMENT_MAX_BYTES,
+  buildAiSafetySystemMessage,
+  buildAuthorizedAiContext,
+  deriveConversationTitle,
+  normalizeConversationTitle,
+  validateAiAttachment,
+} = require("./src/aiAssistantContract");
 const { createAudioQueue } = require("./src/queue");
 const { createRepositories } = require("./src/repositories");
 const {
@@ -525,6 +533,8 @@ function createEmptyDb() {
     exports: [],
     settings: createDefaultSettings(),
     chatMessages: [],
+    aiConversations: [],
+    aiChatAttachments: [],
   };
 }
 
@@ -813,6 +823,8 @@ function normalizeDb(value) {
     user.roleInfoRequiredFields = normalizeRoleInfoFields(user.roleInfoRequiredFields);
   }
   normalized.chatMessages = Array.isArray(normalized.chatMessages) ? normalized.chatMessages : [];
+  normalized.aiConversations = Array.isArray(normalized.aiConversations) ? normalized.aiConversations : [];
+  normalized.aiChatAttachments = Array.isArray(normalized.aiChatAttachments) ? normalized.aiChatAttachments : [];
   return normalized;
 }
 
@@ -4679,6 +4691,7 @@ function getActiveAudioSessionMetadata(recording) {
     deviceId: recording.deviceId,
     scanId: recording.scanId,
     sessionId: recording.sessionId,
+    audioProfile: recording.audioProfile,
     sampleRate: SAMPLE_RATE,
     channels: CHANNELS,
     bitsPerSample: BITS_PER_SAMPLE,
@@ -7049,6 +7062,13 @@ function filterPatientsForUser(user, patients, workspaceId = "") {
       readString(workspaceId, 120) ||
       getUserWorkspaceContext(user).currentWorkspaceId ||
       readString(user.organizationId, 120);
+    if (!canonicalWorkspaceId) {
+      return patients.filter(
+        (item) =>
+          !item.deletedAt &&
+          [item.ownerUserId, item.accountUserId, item.guardianUserId].includes(user.id),
+      );
+    }
     const patient = ensurePatientProfileForUser(user, canonicalWorkspaceId);
     return patient
       ? patients.filter(
@@ -8784,7 +8804,14 @@ async function startRecording(payload = {}, actorUser = null, mutation = {}) {
   const wavFile = `${scanId}.wav`;
   const rawFilePath = path.join(TMP_DIR, `${scanId}.pcm`);
   const wavFilePath = path.join(AUDIO_DIR, wavFile);
-  const mode = readString(payload.mode, 40) || "heart";
+  const mode = readString(payload.mode, 40).toLowerCase() || "heart";
+  if (!new Set(["heart", "lung"]).has(mode)) {
+    throw httpError(
+      400,
+      "Chế độ ghi âm chỉ hỗ trợ tim hoặc phổi",
+      "AUDIO_PROFILE_UNSUPPORTED",
+    );
+  }
   const bodySite = readString(payload.bodySite || payload.location, 120);
   const deviceId = resolveIncomingDeviceId(payload);
   if (!deviceId) {
@@ -8873,6 +8900,7 @@ async function startRecording(payload = {}, actorUser = null, mutation = {}) {
     lastMetricBroadcastAt: 0,
     liveMetrics: createEmptyLiveMetrics(),
     confirmed: false,
+    audioProfile: mode,
   };
 
   recording.stream.on("error", (err) => {
@@ -8896,6 +8924,7 @@ async function startRecording(payload = {}, actorUser = null, mutation = {}) {
       sampleCount: 128,
       frameEncoding: "shcare_audio_v2",
       encoding: "pcm_s16le",
+      audioProfile: mode,
     },
     scan.id,
   );
@@ -8951,6 +8980,7 @@ async function startRecording(payload = {}, actorUser = null, mutation = {}) {
     correlationId: scan.id,
     scanId: scan.id,
     protocolVersion: 2,
+    audioProfile: mode,
     delivery,
   });
 
@@ -22430,19 +22460,240 @@ async function handleDevicesApi(req, res, url, segments) {
   sendJson(res, 404, { error: "Device route not found" });
 }
 
+function publicAiConversation(conversation) {
+  if (!conversation) return null;
+  return {
+    id: conversation.id,
+    title: conversation.title || "Cuộc trò chuyện mới",
+    archivedAt: conversation.archivedAt || null,
+    createdAt: conversation.createdAt || "",
+    updatedAt: conversation.updatedAt || conversation.createdAt || "",
+  };
+}
+
+function publicAiAttachment(attachment) {
+  if (!attachment) return null;
+  return {
+    id: attachment.id,
+    conversationId: attachment.conversationId,
+    messageId: attachment.messageId || "",
+    name: attachment.name,
+    contentType: attachment.contentType,
+    byteSize: Number(attachment.byteSize || 0),
+    sha256: attachment.sha256,
+    createdAt: attachment.createdAt,
+    providerInterpretation: "not_enabled",
+  };
+}
+
+function buildAuthorizedAssistantSnapshot(user, organizationId) {
+  const patients = filterPatientsForUser(user, db.patients, organizationId)
+    .filter((patient) => !organizationId || patient.organizationId === organizationId)
+    .slice(0, 12);
+  const visiblePatientIds = new Set(patients.map((patient) => patient.id));
+  const scans = filterScansForUser(user, db.scans)
+    .filter((scan) => (!organizationId || scan.organizationId === organizationId) && visiblePatientIds.has(scan.patientId))
+    .sort((left, right) => String(right.startedAt || right.createdAt || "").localeCompare(String(left.startedAt || left.createdAt || "")))
+    .slice(0, 20);
+  return buildAuthorizedAiContext({
+    workspaceId: organizationId,
+    generatedAt: nowIso(),
+    patients,
+    scans,
+  });
+}
+
 async function handleAiApi(req, res, segments) {
   const method = req.method || "GET";
   const user = requireUser(req);
   const workspaceContext = getUserWorkspaceContext(user);
   const organizationId = workspaceContext.currentWorkspaceId || user.organizationId || "";
-  const scopedMessages = async () => {
+  const scopedMessages = async (conversationId = "") => {
     if (repositories && typeof repositories.chatMessages?.listByScope === "function") {
-      return repositories.chatMessages.listByScope(user.id, organizationId);
+      return repositories.chatMessages.listByScope(user.id, organizationId, conversationId);
     }
     return db.chatMessages
-      .filter((message) => message.userId === user.id && message.organizationId === organizationId)
+      .filter((message) => (
+        message.userId === user.id &&
+        message.organizationId === organizationId &&
+        (!conversationId || message.conversationId === conversationId)
+      ))
       .slice(-100);
   };
+
+  const listConversations = async (includeArchived = false) => {
+    if (repositories?.aiConversations?.listByScope) {
+      return repositories.aiConversations.listByScope(user.id, organizationId, includeArchived);
+    }
+    return (db.aiConversations || [])
+      .filter((item) => item.userId === user.id && item.organizationId === organizationId && (includeArchived || !item.archivedAt))
+      .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")));
+  };
+  const findConversation = async (conversationId, includeArchived = false) => {
+    if (repositories?.aiConversations?.findByScope) {
+      return repositories.aiConversations.findByScope(conversationId, user.id, organizationId, includeArchived);
+    }
+    return (await listConversations(includeArchived)).find((item) => item.id === conversationId) || null;
+  };
+  const persistConversation = async (conversation, update = false) => {
+    if (repositories?.aiConversations?.[update ? "update" : "create"]) {
+      return repositories.aiConversations[update ? "update" : "create"](conversation);
+    }
+    db.aiConversations = Array.isArray(db.aiConversations) ? db.aiConversations : [];
+    const index = db.aiConversations.findIndex((item) => item.id === conversation.id);
+    if (index >= 0) db.aiConversations[index] = conversation;
+    else db.aiConversations.unshift(conversation);
+    await saveDb();
+    return conversation;
+  };
+
+  if (segments.length === 3 && segments[2] === "conversations" && method === "GET") {
+    const conversations = await listConversations(false);
+    sendJson(res, 200, {
+      conversations: conversations.map(publicAiConversation),
+      availability: getAiProviderAvailability(),
+    });
+    return;
+  }
+
+  if (segments.length === 3 && segments[2] === "conversations" && method === "POST") {
+    const payload = await readJsonBody(req);
+    const timestamp = nowIso();
+    const conversation = {
+      id: createId("ai_conversation"),
+      userId: user.id,
+      organizationId,
+      title: normalizeConversationTitle(payload.title),
+      archivedAt: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    await persistConversation(conversation);
+    await appendAudit("ai.conversation.create", req, {
+      actorUserId: user.id,
+      organizationId,
+      resourceType: "ai_conversation",
+      resourceId: conversation.id,
+    });
+    sendJson(res, 201, { conversation: publicAiConversation(conversation) });
+    return;
+  }
+
+  if (segments.length === 4 && segments[2] === "conversations" && ["GET", "PATCH", "DELETE"].includes(method)) {
+    const conversation = await findConversation(segments[3], true);
+    if (!conversation || conversation.archivedAt) {
+      throw httpError(404, "AI conversation was not found", "AI_CONVERSATION_NOT_FOUND");
+    }
+    if (method === "GET") {
+      const attachments = repositories?.aiConversations?.listAttachments
+        ? await repositories.aiConversations.listAttachments(conversation.id, user.id, organizationId)
+        : (db.aiChatAttachments || []).filter((item) => item.conversationId === conversation.id && item.userId === user.id && item.organizationId === organizationId);
+      sendJson(res, 200, {
+        conversation: publicAiConversation(conversation),
+        messages: await scopedMessages(conversation.id),
+        attachments: attachments.map(publicAiAttachment),
+        availability: getAiProviderAvailability(),
+      });
+      return;
+    }
+    if (method === "PATCH") {
+      const payload = await readJsonBody(req);
+      conversation.title = normalizeConversationTitle(payload.title, conversation.title);
+      conversation.updatedAt = nowIso();
+      await persistConversation(conversation, true);
+      await appendAudit("ai.conversation.update", req, {
+        actorUserId: user.id,
+        organizationId,
+        resourceType: "ai_conversation",
+        resourceId: conversation.id,
+      });
+      sendJson(res, 200, { conversation: publicAiConversation(conversation) });
+      return;
+    }
+    conversation.archivedAt = nowIso();
+    conversation.updatedAt = conversation.archivedAt;
+    await persistConversation(conversation, true);
+    await appendAudit("ai.conversation.archive", req, {
+      actorUserId: user.id,
+      organizationId,
+      resourceType: "ai_conversation",
+      resourceId: conversation.id,
+    });
+    sendJson(res, 200, { archived: true, conversation: publicAiConversation(conversation) });
+    return;
+  }
+
+  if (segments.length === 5 && segments[2] === "conversations" && segments[4] === "attachments" && ["GET", "POST"].includes(method)) {
+    const conversation = await findConversation(segments[3]);
+    if (!conversation) throw httpError(404, "AI conversation was not found", "AI_CONVERSATION_NOT_FOUND");
+    if (method === "GET") {
+      const attachments = repositories?.aiConversations?.listAttachments
+        ? await repositories.aiConversations.listAttachments(conversation.id, user.id, organizationId)
+        : (db.aiChatAttachments || []).filter((item) => item.conversationId === conversation.id && item.userId === user.id && item.organizationId === organizationId);
+      sendJson(res, 200, { attachments: attachments.map(publicAiAttachment) });
+      return;
+    }
+    const name = path.basename(readString(req.headers["x-file-name"], 180));
+    const contentType = readString(req.headers["content-type"], 120).toLowerCase();
+    const buffer = await readRequestBuffer(req, AI_ATTACHMENT_MAX_BYTES + 1);
+    const validation = validateAiAttachment({ name, contentType, byteSize: buffer.length });
+    if (!validation.ok) throw httpError(400, "AI attachment is invalid", validation.code);
+    const attachmentId = createId("ai_attachment");
+    const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
+    const storageScope = organizationId ? `org/${organizationId}` : `personal/${user.id}`;
+    const objectKey = `${storageScope}/ai-chat/${conversation.id}/${attachmentId}-${sha256}-${validation.name}`;
+    const upload = await storageAdapter.putBuffer(objectKey, buffer, validation.contentType);
+    const attachment = {
+      id: attachmentId,
+      conversationId: conversation.id,
+      messageId: "",
+      userId: user.id,
+      organizationId,
+      name: validation.name,
+      contentType: validation.contentType,
+      byteSize: upload.byteSize || buffer.length,
+      sha256,
+      objectKey,
+      storageProvider: upload.provider,
+      createdAt: nowIso(),
+    };
+    try {
+      if (repositories?.aiConversations?.saveAttachment) await repositories.aiConversations.saveAttachment(attachment);
+      else {
+        db.aiChatAttachments = Array.isArray(db.aiChatAttachments) ? db.aiChatAttachments : [];
+        db.aiChatAttachments.unshift(attachment);
+        await saveDb();
+      }
+    } catch (error) {
+      await storageAdapter.deleteObject(objectKey).catch(() => {});
+      throw error;
+    }
+    await appendAudit("ai.attachment.upload", req, {
+      actorUserId: user.id,
+      organizationId,
+      resourceType: "ai_attachment",
+      resourceId: attachment.id,
+      metadata: { contentType: attachment.contentType, byteSize: attachment.byteSize, sha256 },
+    });
+    sendJson(res, 201, { attachment: publicAiAttachment(attachment) });
+    return;
+  }
+
+  if (segments.length === 5 && segments[2] === "attachments" && segments[4] === "download" && method === "GET") {
+    const attachment = repositories?.aiConversations?.findAttachment
+      ? await repositories.aiConversations.findAttachment(segments[3], user.id, organizationId)
+      : (db.aiChatAttachments || []).find((item) => item.id === segments[3] && item.userId === user.id && item.organizationId === organizationId);
+    if (!attachment) throw httpError(404, "AI attachment was not found", "AI_ATTACHMENT_NOT_FOUND");
+    const buffer = await storageAdapter.getBuffer(attachment.objectKey, AI_ATTACHMENT_MAX_BYTES);
+    res.writeHead(200, {
+      "Content-Type": attachment.contentType,
+      "Content-Length": buffer.length,
+      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(attachment.name)}`,
+      "Cache-Control": "private, no-store",
+    });
+    res.end(buffer);
+    return;
+  }
 
   if (segments.length === 3 && segments[2] === "chat" && method === "GET") {
     sendJson(res, 200, { messages: await scopedMessages(), availability: getAiProviderAvailability() });
@@ -22457,7 +22708,13 @@ async function handleAiApi(req, res, segments) {
     return;
   }
 
-  if (segments.length === 3 && segments[2] === "chat" && method === "POST") {
+  const isLegacyChatPost = segments.length === 3 && segments[2] === "chat" && method === "POST";
+  const isConversationMessagePost = segments.length === 5 && segments[2] === "conversations" && segments[4] === "messages" && method === "POST";
+  if (isLegacyChatPost || isConversationMessagePost) {
+    const conversation = isConversationMessagePost ? await findConversation(segments[3]) : null;
+    if (isConversationMessagePost && !conversation) {
+      throw httpError(404, "AI conversation was not found", "AI_CONVERSATION_NOT_FOUND");
+    }
     const availability = getAiProviderAvailability();
     if (!availability.available) {
       throw httpError(
@@ -22468,35 +22725,91 @@ async function handleAiApi(req, res, segments) {
       );
     }
     const payload = await readJsonBody(req);
-    const content = readString(payload.message, 2000);
+    const content = readString(payload.message, 4000);
     if (!content) {
       throw httpError(400, "AI message is required", "AI_MESSAGE_REQUIRED");
     }
+    const conversationId = conversation?.id || "";
+    const requestedAttachmentIds = [...new Set(
+      (Array.isArray(payload.attachmentIds) ? payload.attachmentIds : [])
+        .map((value) => readString(value, 120))
+        .filter(Boolean),
+    )].slice(0, 5);
+    const availableAttachments = conversationId
+      ? repositories?.aiConversations?.listAttachments
+        ? await repositories.aiConversations.listAttachments(conversationId, user.id, organizationId)
+        : (db.aiChatAttachments || []).filter((item) => item.conversationId === conversationId && item.userId === user.id && item.organizationId === organizationId)
+      : [];
+    const selectedAttachments = requestedAttachmentIds
+      .map((id) => availableAttachments.find((item) => item.id === id))
+      .filter(Boolean);
+    if (selectedAttachments.length !== requestedAttachmentIds.length) {
+      throw httpError(403, "One or more AI attachments are outside this conversation", "AI_ATTACHMENT_SCOPE_DENIED");
+    }
     const idempotencyKey = getIdempotencyKey(req, payload);
-    const idempotencyOperation = "ai.chat";
-    const idempotencyFingerprint = createIdempotencyFingerprint(payload);
+    const idempotencyOperation = conversationId ? "ai.conversation.message" : "ai.chat";
+    const idempotencyFingerprint = createIdempotencyFingerprint({ ...payload, conversationId });
     const replayedResponse = findIdempotentResource(user, idempotencyKey, idempotencyOperation, {
       organizationId,
       fingerprint: idempotencyFingerprint,
     });
     if (replayedResponse) {
-      sendJson(res, 200, { ...replayedResponse, idempotent: true });
+      let replayAttachments = replayedResponse.attachments || [];
+      if (conversation && selectedAttachments.length > 0 && repositories?.aiConversations?.bindAttachments) {
+        const replayUserMessage = [...(replayedResponse.messages || [])]
+          .reverse()
+          .find((message) => message.role === "user" && message.conversationId === conversation.id);
+        if (replayUserMessage?.id) {
+          const rebound = await repositories.aiConversations.bindAttachments({
+            attachmentIds: selectedAttachments.map((attachment) => attachment.id),
+            messageId: replayUserMessage.id,
+            conversationId: conversation.id,
+            userId: user.id,
+            organizationId,
+          });
+          if (rebound.length === selectedAttachments.length) {
+            replayAttachments = rebound.map(publicAiAttachment);
+          }
+        }
+      }
+      sendJson(res, 200, { ...replayedResponse, attachments: replayAttachments, idempotent: true });
       await saveDb();
       return;
     }
+    if (selectedAttachments.some((attachment) => attachment.messageId)) {
+      throw httpError(
+        409,
+        "An AI attachment can only be sent once",
+        "AI_ATTACHMENT_ALREADY_USED",
+      );
+    }
 
     const createExchange = async (previousMessages) => {
+      const authorizedSnapshot = buildAuthorizedAssistantSnapshot(user, organizationId);
+      const attachmentNotice = selectedAttachments.length
+        ? `\n\nTệp người dùng đã đính kèm (provider chỉ nhận siêu dữ liệu): ${selectedAttachments.map((item) => `${item.name} (${item.contentType})`).join(", ")}. Không khẳng định đã đọc hoặc phân tích nội dung tệp.`
+        : "";
       const providerResult = await requestAiChat([
+        {
+          role: "system",
+          content: buildAiSafetySystemMessage({
+            actorRole: user.role,
+            context: authorizedSnapshot.context,
+          }),
+        },
         ...previousMessages.map((message) => ({ role: message.role, content: message.content })),
-        { role: "user", content },
+        { role: "user", content: `${content}${attachmentNotice}` },
       ]);
       const createdAt = nowIso();
+      const assistantCreatedAt = new Date(Date.parse(createdAt) + 1).toISOString();
       const userMessage = {
         id: createId("msg"),
         role: "user",
         content,
         userId: user.id,
         organizationId,
+        conversationId,
+        references: [],
         createdAt,
       };
       const assistantMessage = {
@@ -22505,9 +22818,11 @@ async function handleAiApi(req, res, segments) {
         content: providerResult.content,
         userId: user.id,
         organizationId,
+        conversationId,
+        references: authorizedSnapshot.references,
         provider: providerResult.availability.provider,
         model: providerResult.availability.model,
-        createdAt: nowIso(),
+        createdAt: assistantCreatedAt,
       };
       return {
         messages: [userMessage, assistantMessage],
@@ -22515,10 +22830,13 @@ async function handleAiApi(req, res, segments) {
         responseBody: {
           message: assistantMessage,
           messages: [...previousMessages, userMessage, assistantMessage].slice(-100),
+          ...(conversation ? { conversation: publicAiConversation(conversation) } : {}),
+          attachments: selectedAttachments.map(publicAiAttachment),
+          references: authorizedSnapshot.references,
           availability: providerResult.availability,
         },
         auditInput: {
-          action: "ai.chat",
+          action: idempotencyOperation,
           actorUserId: user.id,
           organizationId,
           resourceType: "ai_message",
@@ -22528,6 +22846,9 @@ async function handleAiApi(req, res, segments) {
           metadata: {
             provider: providerResult.availability.provider,
             model: providerResult.availability.model,
+            conversationId,
+            attachmentCount: selectedAttachments.length,
+            referenceCount: authorizedSnapshot.references.length,
             ...(idempotencyKey ? { idempotencyKey } : {}),
           },
         },
@@ -22546,15 +22867,16 @@ async function handleAiApi(req, res, segments) {
       persistenceResult = await repositories.chatMessages.executeWithAudit({
         userId: user.id,
         organizationId,
+        conversationId,
         idempotency,
         responseStatus: 200,
         createExchange,
       });
     } else {
-      const exchange = await createExchange(await scopedMessages());
+      const exchange = await createExchange(await scopedMessages(conversationId));
       db.chatMessages.push(...exchange.messages);
       db.chatMessages = db.chatMessages.slice(-500);
-      await appendAudit("ai.chat", req, exchange.auditInput);
+      await appendAudit(idempotencyOperation, req, exchange.auditInput);
       rememberIdempotentResource(user, idempotencyKey, idempotencyOperation, "ai_chat", exchange.responseBody.message.id, {
         organizationId,
         fingerprint: idempotencyFingerprint,
@@ -22567,7 +22889,34 @@ async function handleAiApi(req, res, segments) {
         replayed: false,
       };
     }
+    if (conversation && selectedAttachments.length > 0) {
+      const userMessage = [...(persistenceResult.responseBody?.messages || [])]
+        .reverse()
+        .find((message) => message.role === "user" && message.conversationId === conversation.id);
+      if (!userMessage?.id || !repositories?.aiConversations?.bindAttachments) {
+        throw httpError(503, "AI attachment binding is unavailable", "AI_ATTACHMENT_BINDING_UNAVAILABLE");
+      }
+      const boundAttachments = await repositories.aiConversations.bindAttachments({
+        attachmentIds: selectedAttachments.map((attachment) => attachment.id),
+        messageId: userMessage.id,
+        conversationId: conversation.id,
+        userId: user.id,
+        organizationId,
+      });
+      if (boundAttachments.length !== selectedAttachments.length) {
+        throw httpError(409, "AI attachments could not be bound to the message", "AI_ATTACHMENT_BINDING_CONFLICT");
+      }
+      persistenceResult.responseBody.attachments = boundAttachments.map(publicAiAttachment);
+    }
     if (!persistenceResult.replayed) {
+      if (conversation) {
+        if (conversation.title === "Cuộc trò chuyện mới") {
+          conversation.title = deriveConversationTitle(content);
+        }
+        conversation.updatedAt = nowIso();
+        await persistConversation(conversation, true);
+        persistenceResult.responseBody.conversation = publicAiConversation(conversation);
+      }
       addAccessLog("Sử dụng trợ lý AI", { userId: user.id, organizationId });
       await saveDb();
     }

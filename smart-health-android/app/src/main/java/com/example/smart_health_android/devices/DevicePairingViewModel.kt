@@ -206,6 +206,7 @@ class DevicePairingViewModel(
     private val currentAuthority: () -> DevicePairingAuthoritySnapshot?,
     private val idempotencyKeyFactory: () -> String = { UUID.randomUUID().toString() },
     private val onlineRetryDelaysMillis: List<Long> = listOf(0L, 1_000L, 2_000L, 4_000L, 8_000L, 15_000L),
+    private val provisioningPresenceRetryDelayMillis: Long = 5_000L,
     private val authorityRetryDelaysMillis: List<Long> =
         listOf(0L, 100L, 250L, 500L, 1_000L, 2_000L, 4_000L),
     private val nowMillis: () -> Long = System::currentTimeMillis,
@@ -1110,59 +1111,67 @@ class DevicePairingViewModel(
 
     private suspend fun waitForOnline(deviceId: String, generation: Long) {
         var lastFailure: Throwable? = null
-        for (retryDelay in onlineRetryDelaysMillis) {
-            delay(retryDelay)
-            if (generation != operationGeneration) return
-            if (!awaitCurrentAuthority()) {
-                denyStaleAuthority()
-                return
-            }
-            _uiState.update { current ->
-                if (current.stage == DevicePairingStage.AwaitingOnline && current.isBusy) {
-                    current.copy(
-                        provisioningProgress = if (
-                            current.provisioningProgress.usesOnlineCheckWithoutDirectResponse()
-                        ) {
-                            DeviceProvisioningProgress.CheckingDeviceOnlineWithoutDirectResponse
-                        } else {
-                            DeviceProvisioningProgress.CheckingDeviceOnline
-                        },
-                    )
-                } else {
-                    current
-                }
-            }
-            val devices = try {
-                repository.listDevices().also { lastFailure = null }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
+        while (true) {
+            for (retryDelay in onlineRetryDelaysMillis) {
+                delay(retryDelay)
+                if (generation != operationGeneration) return
                 if (!awaitCurrentAuthority()) {
                     denyStaleAuthority()
                     return
                 }
-                lastFailure = error
+                _uiState.update { current ->
+                    if (current.stage == DevicePairingStage.AwaitingOnline && current.isBusy) {
+                        current.copy(
+                            provisioningProgress = if (
+                                current.provisioningProgress.usesOnlineCheckWithoutDirectResponse()
+                            ) {
+                                DeviceProvisioningProgress.CheckingDeviceOnlineWithoutDirectResponse
+                            } else {
+                                DeviceProvisioningProgress.CheckingDeviceOnline
+                            },
+                        )
+                    } else {
+                        current
+                    }
+                }
+                val devices = try {
+                    repository.listDevices().also { lastFailure = null }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    if (!awaitCurrentAuthority()) {
+                        denyStaleAuthority()
+                        return
+                    }
+                    lastFailure = error
+                    continue
+                }
+                if (!awaitCurrentAuthority()) {
+                    denyStaleAuthority()
+                    return
+                }
+                val device = devices.firstOrNull {
+                    it.id == deviceId && it.organizationId == expectedAuthority?.workspaceId
+                }
+                if (device?.isAuthenticatedOnline() == true) {
+                    confirmOnline(device)
+                    return
+                }
+            }
+            if (generation != operationGeneration) return
+            if (
+                _uiState.value.stage == DevicePairingStage.Provisioning &&
+                provisioningJob?.isActive == true
+            ) {
+                // Espressif may keep the encrypted UDP broadcaster alive for
+                // up to 90 seconds. Do not stop checking authenticated backend
+                // presence after the first short retry schedule: a late WSS
+                // reconnect is authoritative and should cancel the broadcaster
+                // immediately instead of making the user wait for onStop().
+                delay(provisioningPresenceRetryDelayMillis.coerceAtLeast(250L))
                 continue
             }
-            if (!awaitCurrentAuthority()) {
-                denyStaleAuthority()
-                return
-            }
-            val device = devices.firstOrNull {
-                it.id == deviceId && it.organizationId == expectedAuthority?.workspaceId
-            }
-            if (device?.isAuthenticatedOnline() == true) {
-                confirmOnline(device)
-                return
-            }
-        }
-        if (generation != operationGeneration) return
-        if (
-            _uiState.value.stage == DevicePairingStage.Provisioning &&
-            provisioningJob?.isActive == true
-        ) {
-            pollingJob = null
-            return
+            break
         }
         if (lastFailure != null) {
             publishPresenceFailure(lastFailure)

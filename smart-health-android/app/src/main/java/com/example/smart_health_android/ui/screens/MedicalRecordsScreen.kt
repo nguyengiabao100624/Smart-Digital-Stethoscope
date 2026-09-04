@@ -12,7 +12,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -38,7 +40,6 @@ import com.example.smart_health_android.records.MedicalRecordsUiAction
 import com.example.smart_health_android.records.MedicalRecordsViewModel
 import com.example.smart_health_android.records.MedicalRecordsViewModelFactory
 import com.example.smart_health_android.ui.theme.*
-import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 data class MedicalRecord(
@@ -79,6 +80,7 @@ private fun ShareTargetDoctor.displayName(): String = name.ifBlank { id }
 
 private fun ShareTargetWorkspace.displayName(): String = name.ifBlank { id }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MedicalRecordsScreen(
     onNavigateBack: () -> Unit,
@@ -89,13 +91,6 @@ fun MedicalRecordsScreen(
         factory = MedicalRecordsViewModelFactory(),
     )
     val state by recordsViewModel.uiState.collectAsStateWithLifecycle()
-
-    LaunchedEffect(recordsViewModel) {
-        while (true) {
-            delay(5000)
-            recordsViewModel.onAction(MedicalRecordsUiAction.Refresh)
-        }
-    }
 
     val displayRecords = state.scans.map { it.toMedicalRecord() }
 
@@ -109,6 +104,7 @@ fun MedicalRecordsScreen(
         }
     }
     val semanticColors = ShcareTheme.colors
+    val contentScrollState = rememberScrollState()
 
     Column(
         modifier = Modifier
@@ -156,119 +152,126 @@ fun MedicalRecordsScreen(
             }
         }
 
-        // Tabs
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        PullToRefreshBox(
+            isRefreshing = state.isRefreshing,
+            onRefresh = { recordsViewModel.onAction(MedicalRecordsUiAction.Refresh) },
+            modifier = Modifier.fillMaxSize(),
         ) {
-            FilterTab(
-                text = "Gần đây",
-                icon = null,
-                isSelected = state.activeTab == "recent",
-                onClick = { recordsViewModel.onAction(MedicalRecordsUiAction.TabSelected("recent")) }
-            )
-            FilterTab(
-                text = "Đo Tim",
-                icon = Icons.Default.Favorite,
-                isSelected = state.activeTab == "heart",
-                onClick = { recordsViewModel.onAction(MedicalRecordsUiAction.TabSelected("heart")) }
-            )
-            FilterTab(
-                text = "Đo Phổi",
-                icon = Icons.Default.Air,
-                isSelected = state.activeTab == "lung",
-                onClick = { recordsViewModel.onAction(MedicalRecordsUiAction.TabSelected("lung")) }
-            )
-            FilterTab(
-                text = "Chỉ cảnh báo",
-                icon = Icons.Default.Warning,
-                isSelected = state.activeTab == "abnormal",
-                onClick = { recordsViewModel.onAction(MedicalRecordsUiAction.TabSelected("abnormal")) }
-            )
-        }
-
-        ShareTargetPicker(
-            query = state.shareTargetQuery,
-            onQueryChange = {
-                recordsViewModel.onAction(MedicalRecordsUiAction.ShareQueryChanged(it))
-            },
-            targets = state.shareTargets,
-            selectedDoctor = state.selectedShareDoctor,
-            selectedWorkspace = state.selectedShareWorkspace,
-            loading = state.isLoadingShareTargets,
-            onSelectDoctor = {
-                recordsViewModel.onAction(MedicalRecordsUiAction.DoctorSelected(it))
-            },
-            onSelectWorkspace = {
-                recordsViewModel.onAction(MedicalRecordsUiAction.WorkspaceSelected(it))
-            },
-            onRetry = { recordsViewModel.onAction(MedicalRecordsUiAction.RefreshShareTargets) },
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-
-        state.statusMessage.takeIf { it.isNotBlank() }?.let { message ->
-            Text(
-                text = message,
-                color = semanticColors.success,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-            )
-        }
-        state.errorMessage.takeIf { it.isNotBlank() }?.let { message ->
-            Text(
-                text = message,
-                color = MaterialTheme.colorScheme.error,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
-        }
-
-        if (state.loadState == MedicalRecordsLoadState.Loading || state.isRefreshing) {
-            LinearProgressIndicator(
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-        }
-
-        // List
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            if (state.loadState != MedicalRecordsLoadState.Loading && filteredRecords.isEmpty()) {
-                EmptyRecordsState(
-                    activeTab = state.activeTab,
-                    hasError = state.loadState != MedicalRecordsLoadState.Content,
-                    onRetry = { recordsViewModel.onAction(MedicalRecordsUiAction.Refresh) },
-                )
-            } else {
-                filteredRecords.forEach { record ->
-                    RecordCard(
-                        record = record,
-                        onClick = { onNavigateToDetail(record.id) },
-                        onShare = {
-                            recordsViewModel.onAction(MedicalRecordsUiAction.ShareRecord(record.id))
-                        },
-                        onStop = {
-                            recordsViewModel.onAction(MedicalRecordsUiAction.StopRecord(record.id))
-                        },
-                        isStopping = state.stoppingRecordId == record.id,
-                        isSharing = state.sharingRecordId == record.id,
-                        hasShareTarget = state.hasShareTarget,
+                    .fillMaxSize()
+                    .verticalScroll(contentScrollState),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterTab(
+                        text = "Gần đây",
+                        icon = null,
+                        isSelected = state.activeTab == "recent",
+                        onClick = { recordsViewModel.onAction(MedicalRecordsUiAction.TabSelected("recent")) }
+                    )
+                    FilterTab(
+                        text = "Đo Tim",
+                        icon = Icons.Default.Favorite,
+                        isSelected = state.activeTab == "heart",
+                        onClick = { recordsViewModel.onAction(MedicalRecordsUiAction.TabSelected("heart")) }
+                    )
+                    FilterTab(
+                        text = "Đo Phổi",
+                        icon = Icons.Default.Air,
+                        isSelected = state.activeTab == "lung",
+                        onClick = { recordsViewModel.onAction(MedicalRecordsUiAction.TabSelected("lung")) }
+                    )
+                    FilterTab(
+                        text = "Chỉ cảnh báo",
+                        icon = Icons.Default.Warning,
+                        isSelected = state.activeTab == "abnormal",
+                        onClick = { recordsViewModel.onAction(MedicalRecordsUiAction.TabSelected("abnormal")) }
                     )
                 }
+
+                ShareTargetPicker(
+                    query = state.shareTargetQuery,
+                    onQueryChange = {
+                        recordsViewModel.onAction(MedicalRecordsUiAction.ShareQueryChanged(it))
+                    },
+                    targets = state.shareTargets,
+                    selectedDoctor = state.selectedShareDoctor,
+                    selectedWorkspace = state.selectedShareWorkspace,
+                    loading = state.isLoadingShareTargets,
+                    onSelectDoctor = {
+                        recordsViewModel.onAction(MedicalRecordsUiAction.DoctorSelected(it))
+                    },
+                    onSelectWorkspace = {
+                        recordsViewModel.onAction(MedicalRecordsUiAction.WorkspaceSelected(it))
+                    },
+                    onRetry = { recordsViewModel.onAction(MedicalRecordsUiAction.RefreshShareTargets) },
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                state.statusMessage.takeIf { it.isNotBlank() }?.let { message ->
+                    Text(
+                        text = message,
+                        color = semanticColors.success,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
+                state.errorMessage.takeIf { it.isNotBlank() }?.let { message ->
+                    Text(
+                        text = message,
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                }
+
+                if (state.loadState == MedicalRecordsLoadState.Loading) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (state.loadState != MedicalRecordsLoadState.Loading && filteredRecords.isEmpty()) {
+                        EmptyRecordsState(
+                            activeTab = state.activeTab,
+                            hasError = state.loadState != MedicalRecordsLoadState.Content,
+                            onRetry = { recordsViewModel.onAction(MedicalRecordsUiAction.Refresh) },
+                        )
+                    } else {
+                        filteredRecords.forEach { record ->
+                            RecordCard(
+                                record = record,
+                                onClick = { onNavigateToDetail(record.id) },
+                                onShare = {
+                                    recordsViewModel.onAction(MedicalRecordsUiAction.ShareRecord(record.id))
+                                },
+                                onStop = {
+                                    recordsViewModel.onAction(MedicalRecordsUiAction.StopRecord(record.id))
+                                },
+                                isStopping = state.stoppingRecordId == record.id,
+                                isSharing = state.sharingRecordId == record.id,
+                                hasShareTarget = state.hasShareTarget,
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
             }
-            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
@@ -286,6 +289,12 @@ private fun ShareTargetPicker(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val selectionSummary = when {
+        selectedDoctor != null -> selectedDoctor.displayName()
+        selectedWorkspace != null -> selectedWorkspace.displayName()
+        else -> "Chưa chọn nơi nhận"
+    }
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -295,74 +304,103 @@ private fun ShareTargetPicker(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .clickable { expanded = !expanded },
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("Nơi nhận chia sẻ", color = MaterialTheme.colorScheme.onSurface, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                Text("Tìm bác sĩ hoặc cơ sở y tế đã được cấp quyền", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Text(selectionSummary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             }
             if (loading) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
-            } else {
-                IconButton(onClick = onRetry) {
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = if (expanded) "Thu gọn nơi nhận chia sẻ" else "Mở nơi nhận chia sẻ",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        if (expanded) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Tìm bác sĩ hoặc cơ sở y tế đã được cấp quyền",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = onRetry, enabled = !loading) {
                     Icon(Icons.Default.Refresh, contentDescription = "Tải lại nơi nhận", tint = MaterialTheme.colorScheme.primary)
                 }
             }
-        }
 
-        OutlinedTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            placeholder = { Text("Tìm bác sĩ hoặc cơ sở nhận chia sẻ") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                placeholder = { Text("Tìm bác sĩ hoặc cơ sở nhận chia sẻ") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                )
             )
-        )
 
-        val workspaceOptions = targets.workspaces.take(4)
-        val doctorOptions = targets.doctors.take(4)
+            val workspaceOptions = targets.workspaces.take(4)
+            val doctorOptions = targets.doctors.take(4)
 
-        if (workspaceOptions.isNotEmpty()) {
-            Text("Cơ sở y tế", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            workspaceOptions.forEach { workspace ->
-                ShareTargetOptionRow(
-                    title = workspace.displayName(),
-                    subtitle = listOf(workspace.type, workspace.address).filter { it.isNotBlank() }.joinToString(" • "),
-                    icon = Icons.Default.Home,
-                    selected = selectedWorkspace?.id == workspace.id,
-                    onClick = { onSelectWorkspace(workspace) }
+            if (workspaceOptions.isNotEmpty()) {
+                Text("Cơ sở y tế", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                workspaceOptions.forEach { workspace ->
+                    ShareTargetOptionRow(
+                        title = workspace.displayName(),
+                        subtitle = listOf(workspace.type, workspace.address).filter { it.isNotBlank() }.joinToString(" • "),
+                        icon = Icons.Default.Home,
+                        selected = selectedWorkspace?.id == workspace.id,
+                        onClick = {
+                            onSelectWorkspace(workspace)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+
+            if (doctorOptions.isNotEmpty()) {
+                Text("Bác sĩ", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                doctorOptions.forEach { doctor ->
+                    ShareTargetOptionRow(
+                        title = doctor.displayName(),
+                        subtitle = listOf(doctor.specialty, doctor.clinicName).filter { it.isNotBlank() }.joinToString(" • "),
+                        icon = Icons.Default.Person,
+                        selected = selectedDoctor?.id == doctor.id,
+                        onClick = {
+                            onSelectDoctor(doctor)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+
+            if (!loading && workspaceOptions.isEmpty() && doctorOptions.isEmpty()) {
+                Text(
+                    "Chưa có nơi nhận phù hợp. Hãy thử từ khóa khác hoặc tải lại.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
-        }
-
-        if (doctorOptions.isNotEmpty()) {
-            Text("Bác sĩ", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            doctorOptions.forEach { doctor ->
-                ShareTargetOptionRow(
-                    title = doctor.displayName(),
-                    subtitle = listOf(doctor.specialty, doctor.clinicName).filter { it.isNotBlank() }.joinToString(" • "),
-                    icon = Icons.Default.Person,
-                    selected = selectedDoctor?.id == doctor.id,
-                    onClick = { onSelectDoctor(doctor) }
-                )
-            }
-        }
-
-        if (!loading && workspaceOptions.isEmpty() && doctorOptions.isEmpty()) {
-            Text(
-                "Chưa có nơi nhận phù hợp. Hãy thử từ khóa khác hoặc tải lại.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
         }
     }
 }
@@ -390,6 +428,7 @@ private fun ShareTargetOptionRow(
                 RoundedCornerShape(12.dp)
             )
             .clickable(onClick = onClick)
+            .heightIn(min = 48.dp)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

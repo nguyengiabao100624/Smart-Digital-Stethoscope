@@ -254,6 +254,23 @@ void test_cloud_reconnect_backoff_is_exponential_and_bounded() {
       1000, shcare::reconnectBackoffDelayMs(0, 1000, 30000));
 }
 
+void test_cloud_authentication_timeout_is_bounded_and_wrap_safe() {
+  TEST_ASSERT_FALSE(shcare::cloudAuthenticationTimedOut(
+      false, false, 15000U, 1000U, 10000U));
+  TEST_ASSERT_FALSE(shcare::cloudAuthenticationTimedOut(
+      true, true, 15000U, 1000U, 10000U));
+  TEST_ASSERT_FALSE(shcare::cloudAuthenticationTimedOut(
+      true, false, 10999U, 1000U, 10000U));
+  TEST_ASSERT_TRUE(shcare::cloudAuthenticationTimedOut(
+      true, false, 11000U, 1000U, 10000U));
+
+  const std::uint32_t nearWrap = UINT32_MAX - 15U;
+  TEST_ASSERT_FALSE(shcare::cloudAuthenticationTimedOut(
+      true, false, 15U, nearWrap, 32U));
+  TEST_ASSERT_TRUE(shcare::cloudAuthenticationTimedOut(
+      true, false, 16U, nearWrap, 32U));
+}
+
 void test_setup_portal_requires_factory_state_or_trusted_recovery() {
   TEST_ASSERT_TRUE(shcare::setupPortalAllowed(false, false, false));
   TEST_ASSERT_TRUE(shcare::setupPortalAllowed(false, true, false));
@@ -1534,6 +1551,7 @@ void runTests() {
   RUN_TEST(test_production_security_profile_requires_wss_ca_and_device_credential);
   RUN_TEST(test_plain_ws_and_udp_require_explicit_development_profile);
   RUN_TEST(test_cloud_reconnect_backoff_is_exponential_and_bounded);
+  RUN_TEST(test_cloud_authentication_timeout_is_bounded_and_wrap_safe);
   RUN_TEST(test_setup_portal_requires_factory_state_or_trusted_recovery);
   RUN_TEST(test_setup_portal_expiry_is_bounded_and_wrap_safe);
   RUN_TEST(test_setup_portal_csrf_requires_exact_non_empty_token);

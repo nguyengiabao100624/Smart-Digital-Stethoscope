@@ -73,8 +73,12 @@ const char *cloudTransportLabel(CloudTransport transport);
 bool developmentUdpAllowed(bool productionProfile,
                            bool developmentUdpEnabled);
 std::uint32_t reconnectBackoffDelayMs(std::uint32_t attemptCount,
-                                      std::uint32_t baseDelayMs,
-                                      std::uint32_t maxDelayMs);
+                                       std::uint32_t baseDelayMs,
+                                       std::uint32_t maxDelayMs);
+bool cloudAuthenticationTimedOut(bool transportConnected, bool authenticated,
+                                 std::uint32_t nowMs,
+                                 std::uint32_t connectedAtMs,
+                                 std::uint32_t timeoutMs);
 bool setupPortalAllowed(bool hasWifiConfig, bool physicalGesture,
                         bool trustedRecovery = false);
 bool shouldOpenSetupPortalAfterReconnectFailures(std::uint32_t failureCount,

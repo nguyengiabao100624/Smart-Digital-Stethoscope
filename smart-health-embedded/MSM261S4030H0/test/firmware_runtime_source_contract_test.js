@@ -117,6 +117,7 @@ const cloudConnect = section(
   "void connectCloudSocketIfNeeded()",
   "void handleCloudSocket()",
 );
+const cloudRuntime = section("void handleCloudSocket()", "void drainAudioCaptureQueue(");
 
 assert.match(audioStart, /payloadString\("frameEncoding"\)/);
 assert.match(audioStart, /evaluateAudioSessionContract\(/);
@@ -128,6 +129,10 @@ assert.doesNotMatch(
 );
 assert.match(protocolHeader, /"shcare_audio_v2"/);
 assert.match(protocolSource, /LegacyReceiverOnly/);
+assert.match(protocolHeader, /cloudAuthenticationTimedOut/);
+assert.match(protocolSource, /bool cloudAuthenticationTimedOut/);
+assert.match(cloudRuntime, /cloudAuthenticationTimedOut\(/);
+assert.match(cloudRuntime, /Cloud authentication timed out; reopening the bounded WSS session/);
 assert.match(protocolSource, /validAudioV2SequenceFlags\(sequence, flags\)/);
 
 assert.match(source, /bool otaInProgress = false;/);

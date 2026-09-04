@@ -262,6 +262,12 @@ const MAX_DEVICE_AUDIO_FRAME_BYTES = Number(process.env.MAX_DEVICE_AUDIO_FRAME_B
 const MAX_SCAN_WAVEFORM_BYTES = 256 * 1024;
 const MAX_SCAN_WAVEFORM_POINTS = 512;
 const ALLOW_AUDIO_V1_COMPAT = String(process.env.ALLOW_AUDIO_V1_COMPAT || "true").toLowerCase() === "true";
+const AUDIO_RECORDING_MAX_DURATION_RAW_MS = Number(
+  process.env.AUDIO_RECORDING_MAX_DURATION_MS || 5 * 60 * 1000,
+);
+const AUDIO_RECORDING_MAX_DURATION_MS = Number.isFinite(AUDIO_RECORDING_MAX_DURATION_RAW_MS)
+  ? Math.max(30_000, Math.min(15 * 60 * 1000, AUDIO_RECORDING_MAX_DURATION_RAW_MS))
+  : 5 * 60 * 1000;
 const DEVICE_SECRET_ROTATION_TTL_RAW_MS = Number(process.env.DEVICE_SECRET_ROTATION_TTL_MS || 10 * 60 * 1000);
 const DEVICE_SECRET_ROTATION_TTL_MS = Number.isFinite(DEVICE_SECRET_ROTATION_TTL_RAW_MS)
   ? Math.max(60_000, Math.min(24 * 60 * 60 * 1000, DEVICE_SECRET_ROTATION_TTL_RAW_MS))
@@ -873,7 +879,7 @@ function registerActiveRecording(recording) {
   }
   const existingScanId = activeRecordingScanIdByDeviceId.get(recording.deviceId);
   if (existingScanId) {
-    throw httpError(409, "Thiết bị đang thực hiện một lượt ghi khác", "DEVICE_ALREADY_RECORDING");
+    throw httpError(409, "Thiết bị đang thực hiện một lượt ghi khác", "AUDIO_SESSION_ALREADY_ACTIVE");
   }
   activeRecordingsByScanId.set(recording.scanId, recording);
   activeRecordingScanIdByDeviceId.set(recording.deviceId, recording.scanId);
@@ -889,6 +895,10 @@ function releaseActiveRecording(recordingOrScanId) {
   if (recording.startExpiryTimer) {
     clearTimeout(recording.startExpiryTimer);
     recording.startExpiryTimer = null;
+  }
+  if (recording.maxDurationTimer) {
+    clearTimeout(recording.maxDurationTimer);
+    recording.maxDurationTimer = null;
   }
   activeRecordingsByScanId.delete(recording.scanId);
   if (activeRecordingScanIdByDeviceId.get(recording.deviceId) === recording.scanId) {
@@ -3978,6 +3988,7 @@ async function reconcileAudioSessionCommand(command) {
     }
     return;
   }
+  if (recording.interruptPromise) return;
   if (command.state === "applied") {
     await finalizeRecording(recording);
     return;
@@ -8638,6 +8649,7 @@ async function markRecordingStarted(recording, confirmationSource) {
     clearTimeout(recording.startExpiryTimer);
     recording.startExpiryTimer = null;
   }
+  scheduleAudioRecordingLease(recording);
   Object.assign(scan, {
     status: "recording",
     processingStatus: "recording",
@@ -8714,6 +8726,32 @@ function scheduleAudioStartExpiry(recording, command) {
     })().catch((error) => console.error(`Audio start expiry cleanup error: ${error.message}`));
   }, delayMs);
   recording.startExpiryTimer.unref?.();
+}
+
+function scheduleAudioRecordingLease(recording) {
+  if (!recording || recording.maxDurationTimer) return;
+  recording.maxDurationTimer = setTimeout(() => {
+    const current = getActiveRecordingByScanId(recording.scanId);
+    if (!current || current !== recording || current.stopping) return;
+    void stopRecording(recording.scanId, {
+      idempotencyKey: `audio-max-duration:${recording.scanId}`,
+      requestFingerprint: createIdempotencyFingerprint({
+        scanId: recording.scanId,
+        sessionId: recording.sessionId,
+        type: "audio.session.stop",
+        reason: "max_duration",
+      }),
+    }).catch((error) => {
+      console.error(`Audio maximum-duration stop failed for ${recording.scanId}: ${error.message}`);
+      void interruptRecording(
+        recording,
+        `The audio session exceeded its maximum duration and cleanup failed: ${error.code || error.message}.`,
+      ).catch((cleanupError) => {
+        console.error(`Audio maximum-duration cleanup failed for ${recording.scanId}: ${cleanupError.message}`);
+      });
+    });
+  }, AUDIO_RECORDING_MAX_DURATION_MS);
+  recording.maxDurationTimer.unref?.();
 }
 
 function getScanStartOrganizationId(payload, actorUser) {
@@ -8795,7 +8833,7 @@ async function stopActiveScanIdempotently(actorUser, idempotencyKey, requestPayl
 
 async function startRecording(payload = {}, actorUser = null, mutation = {}) {
   if (getActiveRecordingForDevice(resolveIncomingDeviceId(payload))) {
-    throw httpError(409, "Đang có lượt ghi khác");
+    throw httpError(409, "Thiết bị đang thực hiện một lượt ghi khác", "AUDIO_SESSION_ALREADY_ACTIVE");
   }
 
   const patient = resolvePatientForScan(payload, actorUser);
@@ -8837,7 +8875,11 @@ async function startRecording(payload = {}, actorUser = null, mutation = {}) {
     !authenticatedDeviceSocket.writable ||
     authenticatedDeviceSocket.destroyed
   ) {
-    throw httpError(409, "Thiết bị chưa có phiên xác thực trực tuyến");
+    throw httpError(
+      409,
+      "Thiết bị chưa có phiên xác thực trực tuyến",
+      "DEVICE_NOT_AUTHENTICATED",
+    );
   }
 
   const scan = {
@@ -8973,7 +9015,11 @@ async function startRecording(payload = {}, actorUser = null, mutation = {}) {
       recording,
       "The audio session was interrupted because start delivery did not reach authenticated WSS.",
     );
-    throw httpError(409, "Không thể gửi yêu cầu bắt đầu lượt ghi đến thiết bị");
+    throw httpError(
+      409,
+      "Không thể gửi yêu cầu bắt đầu lượt ghi đến thiết bị",
+      "AUDIO_START_DELIVERY_FAILED",
+    );
   }
   void appendDeviceEvent(device.id, "audio.session.start", {
     commandId: startCommand.id,
@@ -9065,8 +9111,7 @@ async function stopRecording(scanId, options = {}) {
   return operation;
 }
 
-async function stopRecordingSession(recording, scan, options = {}) {
-  saveActiveRecordingProgress(recording, true);
+async function dispatchAudioStopCommand(recording, scan, options = {}) {
   const stopIdempotencyKey =
     readString(options.idempotencyKey, 160) || `audio-stop:${recording.scanId}`;
   const stopRequestFingerprint =
@@ -9111,6 +9156,22 @@ async function stopRecordingSession(recording, scan, options = {}) {
     protocolVersion: recording.protocolVersion || 0,
     delivery: stopDelivery,
   });
+  return { stopCommand, stopDelivery };
+}
+
+async function stopRecordingSession(recording, scan, options = {}) {
+  saveActiveRecordingProgress(recording, true);
+  recording.stopping = true;
+  let stopDelivery;
+  try {
+    ({ stopDelivery } = await dispatchAudioStopCommand(recording, scan, options));
+  } catch (error) {
+    await interruptRecording(
+      recording,
+      `The audio session was interrupted because stop persistence or delivery failed: ${error.code || error.message}.`,
+    );
+    throw error;
+  }
   if (!stopDelivery.websocket) {
     await interruptRecording(
       recording,
@@ -9265,7 +9326,29 @@ async function interruptRecording(recording, summary) {
   if (!recording) return null;
   if (recording.interruptPromise) return recording.interruptPromise;
   recording.interruptPromise = (async () => {
+    recording.stopping = true;
     const scan = findScan(recording.scanId);
+    const device = findDevice(recording.deviceId);
+    const authenticatedDeviceSocket = getAuthenticatedDeviceSocket(device);
+    const sessionStillMatches = Boolean(
+      authenticatedDeviceSocket &&
+      authenticatedDeviceSocket._deviceAuth?.sessionId === recording.deviceSessionId,
+    );
+    if (scan && !recording.stopCommandId && sessionStillMatches) {
+      try {
+        await dispatchAudioStopCommand(recording, scan, {
+          idempotencyKey: `audio-interrupt:${recording.scanId}:${recording.sessionId}`,
+          requestFingerprint: createIdempotencyFingerprint({
+            scanId: recording.scanId,
+            sessionId: recording.sessionId,
+            type: "audio.session.stop",
+            reason: "backend_interrupt",
+          }),
+        });
+      } catch (error) {
+        console.warn(`Cannot deliver interrupted audio stop ${recording.scanId}: ${error.message}`);
+      }
+    }
     releaseActiveRecording(recording);
     try {
       await finishWriteStream(recording.stream);

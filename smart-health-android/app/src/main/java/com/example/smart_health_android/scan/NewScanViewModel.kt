@@ -19,6 +19,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -166,6 +167,7 @@ class ApiNewScanRepository : NewScanRepository {
 class NewScanViewModel(
     private val repository: NewScanRepository,
     private val idempotencyKeyFactory: () -> String = { UUID.randomUUID().toString() },
+    private val startRetryDelaysMillis: List<Long> = listOf(500L, 1_500L),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(NewScanUiState())
     val uiState: StateFlow<NewScanUiState> = _uiState.asStateFlow()
@@ -483,13 +485,10 @@ class NewScanViewModel(
                 )
             }
             try {
-                val freshDevices = repository.loadDevices()
-                    .toScanDeviceList(snapshot.profiles.workspaceIds())
-                val selectedDevice = freshDevices.firstOrNull { it.id == snapshot.selectedDeviceId }
+                val selectedDevice = snapshot.selectedDevice
                 if (selectedDevice?.isEligibleForScan(snapshot.selectedProfile) != true) {
                     _uiState.update {
                         it.copy(
-                            devices = freshDevices,
                             selectedDeviceId = "",
                             isSubmitting = false,
                             failure = NewScanFailure.DeviceOffline,
@@ -498,7 +497,6 @@ class NewScanViewModel(
                     return@launch
                 }
 
-                _uiState.update { it.copy(devices = freshDevices) }
                 val request = StartScanRequest(
                     patientId = snapshot.selectedProfileId,
                     mode = snapshot.scanType.wireValue,
@@ -511,7 +509,10 @@ class NewScanViewModel(
                     pendingStartFingerprint = fingerprint
                     pendingStartIdempotencyKey = idempotencyKeyFactory()
                 }
-                val scan = repository.startScan(request, pendingStartIdempotencyKey)
+                val scan = startScanWithTransportReconciliation(
+                    request = request,
+                    idempotencyKey = pendingStartIdempotencyKey,
+                )
                 if (!scan.matchesAcceptedRequest(request)) {
                     _uiState.update {
                         it.copy(
@@ -548,6 +549,27 @@ class NewScanViewModel(
                         )
                     }
                 }
+            }
+        }
+    }
+
+    private suspend fun startScanWithTransportReconciliation(
+        request: StartScanRequest,
+        idempotencyKey: String,
+    ): Scan {
+        var retryIndex = 0
+        while (true) {
+            try {
+                return repository.startScan(request, idempotencyKey)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                if (!error.isAmbiguousStartTransportFailure() || retryIndex >= startRetryDelaysMillis.size) {
+                    throw error
+                }
+                val retryDelay = startRetryDelaysMillis[retryIndex].coerceAtLeast(0L)
+                retryIndex += 1
+                if (retryDelay > 0L) delay(retryDelay)
             }
         }
     }
@@ -656,12 +678,23 @@ private fun Throwable.toNewScanFailure(): NewScanFailure = when {
         (statusCode in setOf(401, 403) ||
             code.uppercase(Locale.ROOT) in NewScanAuthorityErrorCodes) ->
         NewScanFailure.Permission
+    this is SmartHealthApiException &&
+        code.uppercase(Locale.ROOT) in NewScanDeviceOfflineErrorCodes ->
+        NewScanFailure.DeviceOffline
+    this is SmartHealthApiException -> NewScanFailure.Backend
     this is UnknownHostException ||
         this is ConnectException ||
         this is SocketTimeoutException ||
         this is IOException -> NewScanFailure.Offline
     else -> NewScanFailure.Backend
 }
+
+private fun Throwable.isAmbiguousStartTransportFailure(): Boolean =
+    this !is SmartHealthApiException &&
+        (this is UnknownHostException ||
+            this is ConnectException ||
+            this is SocketTimeoutException ||
+            this is IOException)
 
 private fun NewScanFailure.toLoadState(): NewScanLoadState = when (this) {
     NewScanFailure.Permission -> NewScanLoadState.Permission
@@ -686,4 +719,9 @@ private val NewScanAuthorityErrorCodes = setOf(
     "USER_DELETED",
     "WORKSPACE_ARCHIVED",
     "WORKSPACE_MEMBERSHIP_REQUIRED",
+)
+
+private val NewScanDeviceOfflineErrorCodes = setOf(
+    "AUDIO_START_DELIVERY_FAILED",
+    "DEVICE_NOT_AUTHENTICATED",
 )

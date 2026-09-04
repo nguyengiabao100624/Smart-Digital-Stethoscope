@@ -540,6 +540,54 @@ class DevicePairingViewModelTest {
         }
 
     @Test
+    fun authenticatedPresencePollingContinuesWhileBroadcastIsStillRunning() =
+        runTest(dispatcher) {
+            val broadcastGate = CompletableDeferred<Unit>()
+            val offline = SmartDevice(id = "dev_alpha", name = "Shcare Alpha", online = false)
+            val online = offline.copy(online = true)
+            val repository = FakeDeviceClaimRepository(
+                claimResult = offline,
+                deviceSnapshots = ArrayDeque(
+                    listOf(
+                        listOf(offline),
+                        listOf(online),
+                    ),
+                ),
+            )
+            val provisioner = FakeDeviceWifiProvisioner(
+                progressBeforeCompletion = DeviceProvisioningProgress.BroadcastingCredentials,
+                provisionGate = broadcastGate,
+            )
+            val viewModel = secureViewModel(
+                repository = repository,
+                provisioner = provisioner,
+                onlineRetryDelaysMillis = listOf(0L),
+                provisioningPresenceRetryDelayMillis = 1_000L,
+            )
+
+            prepareEspTouchSetup(viewModel)
+            viewModel.onAction(DevicePairingUiAction.TargetWifiSsidChanged("Home WiFi"))
+            viewModel.onAction(DevicePairingUiAction.TargetWifiPasswordChanged("home-pass-123"))
+            val onlineEffect = async { viewModel.effects.first() }
+            viewModel.onAction(DevicePairingUiAction.StartLocalProvisioning)
+            runCurrent()
+
+            assertEquals(1, repository.listCalls)
+            assertEquals(DevicePairingStage.Provisioning, viewModel.uiState.value.stage)
+
+            advanceTimeBy(1_000L)
+            runCurrent()
+
+            assertEquals(2, repository.listCalls)
+            assertTrue(provisioner.wasCancelled)
+            assertEquals(DevicePairingStage.Online, viewModel.uiState.value.stage)
+            assertEquals(
+                DevicePairingUiEffect.DeviceOnlineConfirmed("Shcare Alpha"),
+                onlineEffect.await(),
+            )
+        }
+
+    @Test
     fun retryingWifiSetupClearsAStaleBroadcastFailureAndThePreviousPassword() = runTest(dispatcher) {
         val repository = FakeDeviceClaimRepository(
             claimResult = SmartDevice(id = "dev_alpha", online = false),
@@ -996,6 +1044,7 @@ class DevicePairingViewModelTest {
         idempotencyKeyFactory: () -> String = { "pair-key-1" },
         onlineRetryDelaysMillis: List<Long> = listOf(0L),
         authorityRetryDelaysMillis: List<Long> = listOf(0L),
+        provisioningPresenceRetryDelayMillis: Long = 5_000L,
     ) = DevicePairingViewModel(
         repository = repository,
         provisioner = provisioner,
@@ -1005,6 +1054,7 @@ class DevicePairingViewModelTest {
         idempotencyKeyFactory = idempotencyKeyFactory,
         onlineRetryDelaysMillis = onlineRetryDelaysMillis,
         authorityRetryDelaysMillis = authorityRetryDelaysMillis,
+        provisioningPresenceRetryDelayMillis = provisioningPresenceRetryDelayMillis,
         nowMillis = { now.toEpochMilli() },
     )
 

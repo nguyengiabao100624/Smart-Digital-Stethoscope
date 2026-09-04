@@ -140,28 +140,72 @@ class NewScanViewModelTest {
     }
 
     @Test
-    fun `fresh device authority blocks start when selected device went offline`() =
+    fun `start scan relies on backend authority without a redundant device reload`() =
         runTest(dispatcher) {
             val repository = FakeNewScanRepository(
                 patients = listOf(patient("patient-1")),
                 deviceSnapshots = ArrayDeque(
                     listOf(
                         listOf(device("device-1", online = true)),
-                        listOf(device("device-1", online = false)),
                     ),
                 ),
             )
             val viewModel = NewScanViewModel(repository)
             runCurrent()
-            makeReady(viewModel, ScanBodySite.Pulmonic)
+            makeReady(viewModel, ScanBodySite.Mitral)
 
             viewModel.onAction(NewScanUiAction.Submit)
             runCurrent()
 
-            assertTrue(repository.startedRequests.isEmpty())
+            assertEquals(1, repository.loadDevicesCalls)
+            assertEquals(1, repository.startedRequests.size)
+            assertEquals("scan-1", viewModel.uiState.value.startedScanId)
+        }
+
+    @Test
+    fun `backend device authentication rejection is shown as device offline`() =
+        runTest(dispatcher) {
+            val repository = readyRepository(
+                startFailure = SmartHealthApiException(
+                    statusCode = 409,
+                    code = "DEVICE_NOT_AUTHENTICATED",
+                    requestId = "request-device-offline",
+                    message = "Thiết bị chưa có phiên xác thực trực tuyến",
+                ),
+            )
+            val viewModel = NewScanViewModel(repository)
+            runCurrent()
+            makeReady(viewModel, ScanBodySite.Aortic)
+
+            viewModel.onAction(NewScanUiAction.Submit)
+            runCurrent()
+
             assertEquals(NewScanFailure.DeviceOffline, viewModel.uiState.value.failure)
-            assertFalse(viewModel.uiState.value.canStart)
+            assertEquals("request-device-offline", viewModel.uiState.value.requestId)
             assertEquals("", viewModel.uiState.value.startedScanId)
+        }
+
+    @Test
+    fun `active audio session conflict is a backend conflict instead of an offline error`() =
+        runTest(dispatcher) {
+            val repository = readyRepository(
+                startFailure = SmartHealthApiException(
+                    statusCode = 409,
+                    code = "AUDIO_SESSION_ALREADY_ACTIVE",
+                    requestId = "request-active-audio",
+                    message = "Thiết bị đang có một lượt ghi khác",
+                ),
+            )
+            val viewModel = NewScanViewModel(repository)
+            runCurrent()
+            makeReady(viewModel, ScanBodySite.Mitral)
+
+            viewModel.onAction(NewScanUiAction.Submit)
+            runCurrent()
+
+            assertEquals(NewScanFailure.Backend, viewModel.uiState.value.failure)
+            assertEquals("Thiết bị đang có một lượt ghi khác", viewModel.uiState.value.errorDetail)
+            assertEquals("request-active-audio", viewModel.uiState.value.requestId)
         }
 
     @Test
@@ -188,7 +232,7 @@ class NewScanViewModelTest {
     }
 
     @Test
-    fun `start retry reuses exact idempotency key for the same intent`() = runTest(dispatcher) {
+    fun `ambiguous start transport failure retries automatically with the exact idempotency key`() = runTest(dispatcher) {
         val repository = readyRepository(
             startResults = ArrayDeque(
                 listOf(
@@ -197,13 +241,13 @@ class NewScanViewModelTest {
                 ),
             ),
         )
-        val viewModel = NewScanViewModel(repository) { "stable-start-key" }
+        val viewModel = NewScanViewModel(
+            repository = repository,
+            idempotencyKeyFactory = { "stable-start-key" },
+            startRetryDelaysMillis = listOf(0L),
+        )
         runCurrent()
         makeReady(viewModel, ScanBodySite.Mitral)
-
-        viewModel.onAction(NewScanUiAction.Submit)
-        runCurrent()
-        assertEquals("", viewModel.uiState.value.startedScanId)
 
         viewModel.onAction(NewScanUiAction.Submit)
         runCurrent()
@@ -362,12 +406,15 @@ private class FakeNewScanRepository(
     val startedRequests = mutableListOf<StartScanRequest>()
     val startIdempotencyKeys = mutableListOf<String>()
     val createdProfiles = mutableListOf<Pair<String, String>>()
+    var loadDevicesCalls = 0
 
     override suspend fun loadProfiles(): List<Patient> =
         profilesFailure?.let { throw it } ?: patients
 
-    override suspend fun loadDevices(): List<SmartDevice> =
-        if (deviceSnapshots.size > 1) deviceSnapshots.removeFirst() else deviceSnapshots.first()
+    override suspend fun loadDevices(): List<SmartDevice> {
+        loadDevicesCalls += 1
+        return if (deviceSnapshots.size > 1) deviceSnapshots.removeFirst() else deviceSnapshots.first()
+    }
 
     override suspend fun createDependentProfile(name: String, relationship: String): Patient {
         createdProfiles += name to relationship

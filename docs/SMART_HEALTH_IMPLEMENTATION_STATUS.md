@@ -3259,3 +3259,13 @@ KLTN report artifacts generated from this evidence set:
 - [x] Reconfirm backend AI/audio gates, Admin gate, doctor Portal gate and firmware target build.
 - [ ] Configure and approve an external AI provider/model before claiming real inference, speech-to-text beyond Android's platform recognizer, or attachment-content analysis.
 - [ ] Capture a fresh credentialed COM9 → production WSS → two-mic audio → durable scan → signed OTA/rollback HIL with the enrolled image; source/build proof does not close this row.
+
+## 2026-09-05 — Guided scan and medical-record refresh repair
+
+- [x] Remove the redundant device-list request before starting a scan and keep backend authorization/presence as the atomic authority.
+- [x] Add stable start-conflict/offline error codes and map them correctly in Android instead of reporting every API `IOException` as a network failure.
+- [x] Retry ambiguous start transport failures with the exact same idempotency key.
+- [x] Send a durable stop on device-reported/backend interruption, bind it to the original authenticated device session and add a bounded five-minute recording lease.
+- [x] Replace five-second medical-record polling with pull-to-refresh and make the shared doctor/patient recipient picker collapsed by default.
+- [x] Pass backend syntax and device/OTA/security `89/89`; pass focused Android ViewModel/UI tests, `assembleDebug` and `lintDebug`; install APK `B8F39BB61E04532EDEC310FDDF7A3692CA062653E7BED2832A0DB3D0F4252A9A` on Xiaomi; pass firmware source/production build with candidate hash `96A1E0A66D4EF856118249BF4E15B252A118C8F8C4F945C9BD816864F6E75CCA`.
+- [ ] Complete live production mutation/audio proof after Render serves this candidate. Current COM9 proves the old WSS stream counter is stationary, but mic slot 1 is near silence and the sleeping MIUI display prevents a fresh visual/TalkBack claim.

@@ -2917,3 +2917,13 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - [ ] Flash only an enrolled, signed firmware image containing the correct device credential/CA material, then capture fresh COM9 evidence for association, WSS authentication, command ACK, both physical microphones, durable scan and signed OTA success/forced rollback.
 - [ ] Run a new unlocked Xiaomi visual/TalkBack sweep of the normal authenticated patient and doctor journeys. The test automation and installed APK are current, but the phone returned to secure keyguard after the run.
 - [ ] Keep workspace/business Portal expansion in the future roadmap; current Web scope is doctor Portal. Platform Admin and shared backend contracts remain active production surfaces.
+
+## 2026-09-05 — Guided measurement follow-up
+
+- [x] Stabilize start-scan error semantics, idempotent transport reconciliation and interruption cleanup across backend and Android.
+- [x] Add a bounded backend recording lease so app process death cannot leave an unlimited WSS audio stream.
+- [x] Remove automatic five-second records polling and ship collapsed share-target selection plus pull-to-refresh for doctor and patient.
+- [x] Pass backend `89/89` device/OTA/security, Android focused unit/UI, assemble/lint and firmware source/production build gates; install the current debug APK on Xiaomi.
+- [ ] Deploy the candidate backend and prove production start ACK, more than one second of audio, explicit stop, durable completed scan and playback.
+- [ ] Diagnose/repair physical mic slot 1 before claiming two-microphone acceptance; current bounded COM9 evidence shows slot 0 active and slot 1 near silence.
+- [ ] Wake/unlock Xiaomi for the final visual/TalkBack and guided-scan production HIL; MIUI currently blocks ADB input injection while asleep.

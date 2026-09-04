@@ -5095,3 +5095,20 @@ $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
 ```
 
 `AIAssistantScreenTest` verifies attachment entry points, history controls and the voice invariant: Stop places the final transcript in the draft and does not send until the explicit Send action. The production AI provider remains disabled until a provider/model and secret are approved; do not place keys in source, Gradle properties, ADB arguments or test output.
+
+## 2026-09-05 guided-scan and records verification
+
+```powershell
+Set-Location 'D:\Study\KLTN\smart-health-embedded\web-monitor'
+npm run check
+npm run smoke:device-security
+
+Set-Location 'D:\Study\KLTN\smart-health-android'
+.\gradlew.bat :app:testDebugUnitTest `
+  --tests 'com.example.smart_health_android.scan.NewScanViewModelTest' `
+  --tests 'com.example.smart_health_android.ui.DoctorDashboardRecordsArchitectureTest' `
+  --no-daemon --console=plain
+.\gradlew.bat :app:assembleDebug :app:lintDebug --no-daemon --console=plain
+```
+
+`AUDIO_RECORDING_MAX_DURATION_MS` may override the backend safety lease and is clamped to 30 seconds through 15 minutes; the default is five minutes. Medical records refresh only on initial load, explicit toolbar refresh, retry or pull-to-refresh—never by a perpetual timer. Production acceptance still requires a real authenticated device ACK, multi-second audio, explicit stop, durable completed scan and playback; source tests do not replace that HIL.

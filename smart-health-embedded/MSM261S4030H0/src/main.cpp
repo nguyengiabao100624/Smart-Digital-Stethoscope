@@ -350,6 +350,10 @@ const unsigned long WIFI_RECONNECT_MAX_MS = 30000;
 const unsigned long WIFI_ASSOCIATION_TIMEOUT_MS = 15000;
 const unsigned long CLOUD_RECONNECT_BASE_MS = 1000;
 const unsigned long CLOUD_RECONNECT_MAX_MS = 30000;
+// The backend challenge expires after roughly ten seconds. Some Arduino
+// WebSockets close paths do not reliably emit ConnectionClosed, so the device
+// owns a slightly longer watchdog and forces a fresh bounded handshake.
+const unsigned long CLOUD_AUTH_HANDSHAKE_TIMEOUT_MS = 12000;
 constexpr time_t TLS_CERT_TIME_FLOOR = 1700000000;
 const unsigned long CLOUD_TELEMETRY_INTERVAL_MS = 10000;
 const unsigned long I2S_RETRY_BASE_MS = 1000;
@@ -417,6 +421,7 @@ bool i2sMaintenancePaused = false;
 bool taskWatchdogReady = false;
 bool cloudTransportConnected = false;
 bool cloudConnected = false;
+unsigned long cloudTransportConnectedAtMs = 0;
 int64_t authenticatedServerEpochBaseMs = 0;
 uint32_t authenticatedServerEpochAtUptimeMs = 0;
 bool cloudConfigured = false;
@@ -5227,6 +5232,7 @@ void setupCloudSocket() {
     if (event == WebsocketsEvent::ConnectionOpened) {
       cloudTransportConnected = true;
       cloudConnected = false;
+      cloudTransportConnectedAtMs = millis();
       cloudSessionId = "";
       cloudAuthHandshake.reset();
       authenticatedProductionHeartbeatObserved = false;
@@ -5237,6 +5243,7 @@ void setupCloudSocket() {
     } else if (event == WebsocketsEvent::ConnectionClosed) {
       cloudTransportConnected = false;
       cloudConnected = false;
+      cloudTransportConnectedAtMs = 0;
       cloudSessionId = "";
       cloudAuthHandshake.reset();
       authenticatedProductionHeartbeatObserved = false;
@@ -5311,6 +5318,28 @@ void handleCloudSocket() {
     return;
   }
   cloudSocket.poll();
+  if (shcare::cloudAuthenticationTimedOut(
+          cloudTransportConnected, cloudConnected,
+          static_cast<std::uint32_t>(millis()),
+          static_cast<std::uint32_t>(cloudTransportConnectedAtMs),
+          static_cast<std::uint32_t>(CLOUD_AUTH_HANDSHAKE_TIMEOUT_MS))) {
+    Serial.println(
+        "Cloud authentication timed out; reopening the bounded WSS session.");
+    // Reset locally before close(): this also recovers libraries/transports
+    // that never deliver their ConnectionClosed callback after a server-side
+    // AUTH_TIMEOUT close.
+    cloudTransportConnected = false;
+    cloudConnected = false;
+    cloudTransportConnectedAtMs = 0;
+    cloudSessionId = "";
+    cloudAuthChallengeId = "";
+    cloudAuthNonce = "";
+    cloudAuthHandshake.reset();
+    authenticatedProductionHeartbeatObserved = false;
+    resetAudioSession();
+    cloudSocket.close();
+    lastCloudConnectAttemptMs = millis();
+  }
   connectCloudSocketIfNeeded();
   if (!cloudConnected) {
     queueOfflineTelemetryIfDue();

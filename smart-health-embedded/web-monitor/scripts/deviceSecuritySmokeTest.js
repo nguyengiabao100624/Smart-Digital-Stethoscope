@@ -874,6 +874,7 @@ before(async () => {
       DATA_DIR: dataDir,
       AUTH_MODE: "demo",
       FIREBASE_AUTH_ENABLED: "false",
+      RATE_LIMIT_PER_MINUTE: "5000",
       OBJECT_STORAGE_PROVIDER: "local",
       LOCAL_OBJECT_STORAGE_DIR: path.join(dataDir, "objects"),
       OTA_MAX_FIRMWARE_BYTES: String(1024 * 1024),
@@ -2130,6 +2131,14 @@ test("device command reads use the durable repository instead of process-local m
   assert.match(serverSource, /async function findDeviceCommand\([\s\S]*repositories\?\.deviceCommands\?\.findById/);
   assert.match(serverSource, /async function listDeviceCommands\([\s\S]*repositories\?\.deviceCommands\?\.listForDevice/);
   assert.match(serverSource, /const command = await findDeviceCommand\(deviceId, commandId\)/);
+});
+
+test("confirmed audio sessions have a bounded backend recording lease", () => {
+  const serverSource = fs.readFileSync(path.join(rootDir, "server.js"), "utf8");
+  assert.match(serverSource, /AUDIO_RECORDING_MAX_DURATION_MS/);
+  assert.match(serverSource, /scheduleAudioRecordingLease\(recording\)/);
+  assert.match(serverSource, /audio-max-duration:\$\{recording\.scanId\}/);
+  assert.match(serverSource, /clearTimeout\(recording\.maxDurationTimer\)/);
 });
 
 test("production readiness fails closed until the backend OTA signer is configured", () => {
@@ -4230,6 +4239,21 @@ test("scan start requires idempotency and rejects an exact-key payload mismatch"
   peer.socket.close();
 });
 
+test("scan start returns a stable device-offline code when authenticated WSS is absent", async () => {
+  const token = await loginPlatformAdmin();
+  const rejected = await requestJson("/api/v1/scans/start", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": "scan-start-device-not-authenticated",
+    },
+    body: JSON.stringify({ patientId: "pat_alpha", deviceId: "dev_alpha_peer", mode: "heart" }),
+  });
+  assert.equal(rejected.response.status, 409, JSON.stringify(rejected.body));
+  assert.equal(rejected.body.code, "device_not_authenticated");
+});
+
 test("audio sessions are concurrent per device and start ACKs are durable and idempotent", async () => {
   const alpha = openSocket("/esp");
   const beta = openSocket("/esp");
@@ -4258,6 +4282,15 @@ test("audio sessions are concurrent per device and start ACKs are durable and id
   assert.notEqual(alphaStarted.body.scan.id, betaStarted.body.scan.id);
   assert.notEqual(alphaStarted.body.scan.status, "recording", "transport delivery alone is not device confirmation");
   assert.notEqual(betaStarted.body.scan.status, "recording", "transport delivery alone is not device confirmation");
+
+  const conflictingStart = await startScan(
+    "pat_alpha",
+    "dev_alpha_peer",
+    "lung",
+    "audio-start-alpha-conflict",
+  );
+  assert.equal(conflictingStart.response.status, 409, JSON.stringify(conflictingStart.body));
+  assert.equal(conflictingStart.body.code, "audio_session_already_active");
 
   const [alphaCommand, betaCommand] = await Promise.all([alpha.nextJson(), beta.nextJson()]);
   assert.equal(alphaCommand.type, "audio.session.start");
@@ -4432,6 +4465,9 @@ test("a failed start ACK interrupts only its matching scan and releases the devi
   await waitForCommandState(token, "dev_alpha_peer", failedCommand.id, "failed");
   const interrupted = await waitForScanState(token, failedStart.body.scan.id, "interrupted");
   assert.match(interrupted.aiSummary, /device reported failed/i);
+  const failedStopCommand = await peer.nextJson();
+  assert.equal(failedStopCommand.type, "audio.session.stop");
+  assert.equal(failedStopCommand.payload.scanId, failedStart.body.scan.id);
 
   const replacement = await requestJson("/api/v1/scans/start", {
     method: "POST",
@@ -4441,8 +4477,12 @@ test("a failed start ACK interrupts only its matching scan and releases the devi
   assert.equal(replacement.response.status, 201, JSON.stringify(replacement.body));
   assert.notEqual(replacement.body.scan.id, failedStart.body.scan.id);
   const replacementCommand = await peer.nextJson();
+  assert.equal(replacementCommand.type, "audio.session.start");
   sendDeviceCommandStatus(peer, replacementCommand, "failed", "TEST_CLEANUP", "test cleanup");
   await waitForScanState(token, replacement.body.scan.id, "interrupted");
+  const replacementStopCommand = await peer.nextJson();
+  assert.equal(replacementStopCommand.type, "audio.session.stop");
+  assert.equal(replacementStopCommand.payload.scanId, replacement.body.scan.id);
   peer.socket.close();
 });
 
@@ -4489,6 +4529,10 @@ test("an authenticated audio.failed event terminalizes only its bound active sca
   const interrupted = await waitForScanState(token, started.body.scan.id, "interrupted");
   assert.equal(interrupted.processingStatus, "interrupted");
   assert.match(interrupted.aiSummary, /I2S_CAPTURE_FAILED|i2s capture interrupted/i);
+  const stopCommand = await peer.nextJson();
+  assert.equal(stopCommand.type, "audio.session.stop");
+  assert.equal(stopCommand.payload.scanId, started.body.scan.id);
+  assert.equal(stopCommand.payload.sessionId, command.payload.sessionId);
   peer.socket.close();
 });
 

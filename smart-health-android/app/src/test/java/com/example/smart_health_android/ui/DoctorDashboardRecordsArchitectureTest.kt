@@ -36,6 +36,16 @@ class DoctorDashboardRecordsArchitectureTest {
         assertTrue(records.contains("interface MedicalRecordsRepository"))
     }
 
+    @Test
+    fun `medical records refresh is user driven and the share target picker starts collapsed`() {
+        val records = source("ui/screens/MedicalRecordsScreen.kt")
+
+        assertTrue(records.contains("PullToRefreshBox("))
+        assertTrue(records.contains("rememberSaveable { mutableStateOf(false) }"))
+        assertFalse(records.contains("delay(5000)"))
+        assertFalse(records.contains("while (true)"))
+    }
+
     private fun source(relativePath: String): String = projectDirectory()
         .resolve("src/main/java/com/example/smart_health_android/$relativePath")
         .readText()

@@ -521,6 +521,16 @@ std::uint32_t reconnectBackoffDelayMs(std::uint32_t attemptCount,
   return std::min(delayMs, maxDelayMs);
 }
 
+bool cloudAuthenticationTimedOut(bool transportConnected, bool authenticated,
+                                 std::uint32_t nowMs,
+                                 std::uint32_t connectedAtMs,
+                                 std::uint32_t timeoutMs) {
+  if (!transportConnected || authenticated || timeoutMs == 0U) {
+    return false;
+  }
+  return static_cast<std::uint32_t>(nowMs - connectedAtMs) >= timeoutMs;
+}
+
 RuntimeSecurityDecision evaluateRuntimeSecurity(
     const RuntimeSecurityConfig &config) {
   if (!config.backendConfigured) {

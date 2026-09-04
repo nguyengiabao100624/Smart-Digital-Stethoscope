@@ -68,6 +68,9 @@ class AIAssistantScreenTest {
         override suspend fun load(conversationId: String): AiChatSession =
             AiChatSession(emptyList(), availability)
 
+        override suspend fun archive(conversationId: String): AiConversation =
+            AiConversation(id = conversationId, title = "Đã lưu trữ", archivedAt = "2026-09-04T00:00:00Z")
+
         override suspend fun send(
             conversationId: String,
             message: String,

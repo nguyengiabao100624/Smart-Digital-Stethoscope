@@ -35,6 +35,7 @@ data class AiChatUiState(
     val input: String = "",
     val isSending: Boolean = false,
     val isUploading: Boolean = false,
+    val isArchiving: Boolean = false,
     val isHistoryVisible: Boolean = false,
     val errorMessage: String = "",
     val errorMessageRes: Int? = null,
@@ -48,6 +49,7 @@ sealed interface AiChatUiAction {
     data class SelectConversation(val conversationId: String) : AiChatUiAction
     data class AttachmentSelected(val attachment: LocalAiAttachment) : AiChatUiAction
     data class RemoveAttachment(val attachmentId: String) : AiChatUiAction
+    data class ArchiveConversation(val conversationId: String) : AiChatUiAction
     data object NewConversation : AiChatUiAction
     data object ToggleHistory : AiChatUiAction
     data object Send : AiChatUiAction
@@ -59,6 +61,7 @@ interface AiChatRepository {
     suspend fun listConversations(): AiConversationList
     suspend fun createConversation(): AiConversation
     suspend fun load(conversationId: String): AiChatSession
+    suspend fun archive(conversationId: String): AiConversation
     suspend fun send(
         conversationId: String,
         message: String,
@@ -73,6 +76,9 @@ class ApiAiChatRepository : AiChatRepository {
     override suspend fun createConversation(): AiConversation = SmartHealthRepository.api.createAiConversation()
     override suspend fun load(conversationId: String): AiChatSession =
         SmartHealthRepository.api.getAiConversationSession(conversationId)
+
+    override suspend fun archive(conversationId: String): AiConversation =
+        SmartHealthRepository.api.archiveAiConversation(conversationId)
 
     override suspend fun send(
         conversationId: String,
@@ -115,6 +121,7 @@ class AiChatViewModel(
             is AiChatUiAction.RemoveAttachment -> _uiState.update {
                 it.copy(selectedAttachmentIds = it.selectedAttachmentIds - action.attachmentId)
             }
+            is AiChatUiAction.ArchiveConversation -> archiveConversation(action.conversationId)
             AiChatUiAction.NewConversation -> _uiState.update {
                 it.copy(
                     currentConversation = null,
@@ -142,7 +149,7 @@ class AiChatViewModel(
     }
 
     private fun refresh() {
-        if (_uiState.value.isSending || _uiState.value.isUploading) return
+        if (_uiState.value.isSending || _uiState.value.isUploading || _uiState.value.isArchiving) return
         _uiState.update { it.copy(loadState = AiChatLoadState.Loading, errorMessage = "", requestId = "") }
         viewModelScope.launch {
             runCatching { repository.listConversations() }
@@ -166,7 +173,7 @@ class AiChatViewModel(
     }
 
     private fun selectConversation(conversationId: String) {
-        if (_uiState.value.isSending || _uiState.value.isUploading) return
+        if (_uiState.value.isSending || _uiState.value.isUploading || _uiState.value.isArchiving) return
         _uiState.update { it.copy(isHistoryVisible = false, loadState = AiChatLoadState.Loading) }
         viewModelScope.launch { loadConversation(conversationId) }
     }
@@ -187,6 +194,44 @@ class AiChatViewModel(
             )
         }
         return created
+    }
+
+    private fun archiveConversation(conversationId: String) {
+        val state = _uiState.value
+        if (
+            conversationId.isBlank() ||
+            state.isSending ||
+            state.isUploading ||
+            state.isArchiving ||
+            state.conversations.none { it.id == conversationId }
+        ) return
+        _uiState.update { it.copy(isArchiving = true, errorMessage = "", requestId = "") }
+        viewModelScope.launch {
+            runCatching { repository.archive(conversationId) }
+                .onSuccess {
+                    val remaining = _uiState.value.conversations.filterNot { item -> item.id == conversationId }
+                    val archivedCurrent = _uiState.value.currentConversation?.id == conversationId
+                    _uiState.update { current ->
+                        current.copy(
+                            conversations = remaining,
+                            currentConversation = if (archivedCurrent) null else current.currentConversation,
+                            messages = if (archivedCurrent) emptyList() else current.messages,
+                            attachments = if (archivedCurrent) emptyList() else current.attachments,
+                            selectedAttachmentIds = if (archivedCurrent) emptySet() else current.selectedAttachmentIds,
+                            isArchiving = false,
+                            isHistoryVisible = remaining.isNotEmpty(),
+                            loadState = when {
+                                !current.availability.available -> AiChatLoadState.Unavailable
+                                archivedCurrent && remaining.isEmpty() -> AiChatLoadState.Empty
+                                archivedCurrent -> AiChatLoadState.Loading
+                                else -> current.loadState
+                            },
+                        )
+                    }
+                    if (archivedCurrent) remaining.firstOrNull()?.let { next -> loadConversation(next.id) }
+                }
+                .onFailure(::applyFailureKeepingContent)
+        }
     }
 
     private fun uploadAttachment(attachment: LocalAiAttachment) {
@@ -253,6 +298,7 @@ class AiChatViewModel(
                 input = if (clearInput) "" else it.input,
                 isSending = false,
                 isUploading = false,
+                isArchiving = false,
                 errorMessage = "",
                 errorMessageRes = null,
                 requestId = "",
@@ -267,6 +313,7 @@ class AiChatViewModel(
                 loadState = AiChatLoadState.Error,
                 isSending = false,
                 isUploading = false,
+                isArchiving = false,
                 errorMessage = error.message.orEmpty(),
                 errorMessageRes = if (error.message == null) R.string.ai_assistant_load_error_title else null,
                 requestId = apiError?.requestId.orEmpty(),
@@ -280,6 +327,7 @@ class AiChatViewModel(
             it.copy(
                 isSending = false,
                 isUploading = false,
+                isArchiving = false,
                 errorMessage = error.message.orEmpty(),
                 errorMessageRes = if (error.message == null) R.string.ai_assistant_send_error else null,
                 requestId = apiError?.requestId.orEmpty(),

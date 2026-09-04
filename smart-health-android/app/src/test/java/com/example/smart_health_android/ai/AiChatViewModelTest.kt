@@ -113,6 +113,31 @@ class AiChatViewModelTest {
         assertEquals(setOf("att-1"), viewModel.uiState.value.selectedAttachmentIds)
         assertEquals("ket-qua.pdf", viewModel.uiState.value.attachments.single().name)
     }
+
+    @Test
+    fun archivingCurrentConversationRemovesItAndLoadsNextConfirmedConversation() = runTest(dispatcher) {
+        val first = conversation("conv-1", "Hội thoại thứ nhất")
+        val second = conversation("conv-2", "Hội thoại thứ hai")
+        val secondMessages = listOf(message("m2", "assistant", "Dữ liệu của hội thoại thứ hai"))
+        val repository = FakeAiChatRepository(
+            conversations = mutableListOf(first, second),
+            sessions = mutableMapOf(
+                first.id to session(first, listOf(message("m1", "assistant", "Dữ liệu cũ"))),
+                second.id to session(second, secondMessages),
+            ),
+        )
+        val viewModel = AiChatViewModel(repository = repository)
+        advanceUntilIdle()
+
+        viewModel.onAction(AiChatUiAction.ArchiveConversation(first.id))
+        advanceUntilIdle()
+
+        assertEquals(listOf(first.id), repository.archivedConversationIds)
+        assertEquals(listOf(second), viewModel.uiState.value.conversations)
+        assertEquals(second, viewModel.uiState.value.currentConversation)
+        assertEquals(secondMessages, viewModel.uiState.value.messages)
+        assertFalse(viewModel.uiState.value.isArchiving)
+    }
 }
 
 private class FakeAiChatRepository(
@@ -126,6 +151,7 @@ private class FakeAiChatRepository(
     var createCalls = 0
     var sendCalls = 0
     var lastIdempotencyKey = ""
+    val archivedConversationIds = mutableListOf<String>()
 
     override suspend fun listConversations() = AiConversationList(conversations, availability())
     override suspend fun createConversation(): AiConversation {
@@ -135,6 +161,13 @@ private class FakeAiChatRepository(
     }
     override suspend fun load(conversationId: String): AiChatSession =
         sessions[conversationId] ?: session(conversations.first { it.id == conversationId }, emptyList())
+
+    override suspend fun archive(conversationId: String): AiConversation {
+        archivedConversationIds += conversationId
+        val archived = conversations.first { it.id == conversationId }.copy(archivedAt = "2026-09-04T00:00:00Z")
+        conversations.removeAll { it.id == conversationId }
+        return archived
+    }
 
     override suspend fun send(conversationId: String, message: String, attachmentIds: List<String>, idempotencyKey: String): AiChatSession {
         sendCalls += 1

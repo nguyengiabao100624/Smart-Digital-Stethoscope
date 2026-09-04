@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -48,6 +50,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -79,7 +82,9 @@ import com.example.smart_health_android.ai.AiChatViewModel
 import com.example.smart_health_android.ai.AndroidSpeechTranscriber
 import com.example.smart_health_android.ai.LocalAiAttachment
 import com.example.smart_health_android.ai.SpeechTranscriberListener
+import com.example.smart_health_android.data.AiChatAttachment
 import com.example.smart_health_android.data.AiChatMessage
+import com.example.smart_health_android.data.AiConversation
 import com.example.smart_health_android.data.formatIso
 import com.example.smart_health_android.ui.components.ShcareEmptyState
 import com.example.smart_health_android.ui.components.ShcareErrorState
@@ -239,8 +244,8 @@ fun AIAssistantScreen(
                         onAction = { viewModel.onAction(AiChatUiAction.Retry) },
                         modifier = Modifier.fillMaxSize().testTag("ai_assistant.unavailable"),
                     )
-                } else AiChatTimeline(state.messages, providerUnavailable = true)
-                AiChatLoadState.Ready -> AiChatTimeline(state.messages, providerUnavailable = false)
+                } else AiChatTimeline(state.messages, state.attachments, providerUnavailable = true)
+                AiChatLoadState.Ready -> AiChatTimeline(state.messages, state.attachments, providerUnavailable = false)
             }
         }
     }
@@ -248,6 +253,24 @@ fun AIAssistantScreen(
 
 @Composable
 private fun ConversationHistory(state: AiChatUiState, onAction: (AiChatUiAction) -> Unit) {
+    var pendingArchive by remember { mutableStateOf<AiConversation?>(null) }
+    pendingArchive?.let { conversation ->
+        AlertDialog(
+            onDismissRequest = { if (!state.isArchiving) pendingArchive = null },
+            title = { Text("Lưu trữ cuộc trò chuyện?") },
+            text = { Text("Cuộc trò chuyện sẽ được ẩn khỏi lịch sử đang hoạt động. Dữ liệu trên máy chủ vẫn được lưu an toàn.") },
+            confirmButton = {
+                TextButton(
+                    enabled = !state.isArchiving,
+                    onClick = {
+                        onAction(AiChatUiAction.ArchiveConversation(conversation.id))
+                        pendingArchive = null
+                    },
+                ) { Text("Lưu trữ") }
+            },
+            dismissButton = { TextButton(onClick = { pendingArchive = null }) { Text("Hủy") } },
+        )
+    }
     Column(
         Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -257,14 +280,30 @@ private fun ConversationHistory(state: AiChatUiState, onAction: (AiChatUiAction)
         if (state.conversations.isEmpty()) Text("Chưa có cuộc trò chuyện nào.")
         state.conversations.forEach { conversation ->
             Card(
-                modifier = Modifier.fillMaxWidth().clickable { onAction(AiChatUiAction.SelectConversation(conversation.id)) },
+                modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
                     containerColor = if (conversation.id == state.currentConversation?.id) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                 ),
             ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(conversation.title, style = MaterialTheme.typography.titleMedium)
-                    Text(formatIso(conversation.updatedAt, "dd/MM/yyyy · HH:mm"), style = MaterialTheme.typography.labelMedium)
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        Modifier.weight(1f).clickable { onAction(AiChatUiAction.SelectConversation(conversation.id)) }.padding(vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(conversation.title, style = MaterialTheme.typography.titleMedium)
+                        Text(formatIso(conversation.updatedAt, "dd/MM/yyyy · HH:mm"), style = MaterialTheme.typography.labelMedium)
+                    }
+                    IconButton(
+                        enabled = !state.isArchiving,
+                        onClick = { pendingArchive = conversation },
+                        modifier = Modifier.testTag("ai_assistant.archive.${conversation.id}"),
+                    ) {
+                        if (state.isArchiving) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Default.Archive, contentDescription = "Lưu trữ ${conversation.title}")
+                    }
                 }
             }
         }
@@ -301,7 +340,11 @@ private fun AiChatEmptyContent() {
 }
 
 @Composable
-private fun AiChatTimeline(messages: List<AiChatMessage>, providerUnavailable: Boolean) {
+private fun AiChatTimeline(
+    messages: List<AiChatMessage>,
+    attachments: List<AiChatAttachment>,
+    providerUnavailable: Boolean,
+) {
     val listState = rememberLazyListState()
     LaunchedEffect(messages.size, providerUnavailable) {
         if (messages.isNotEmpty()) {
@@ -321,7 +364,9 @@ private fun AiChatTimeline(messages: List<AiChatMessage>, providerUnavailable: B
                 Text(stringResource(R.string.ai_assistant_unavailable_message), Modifier.padding(16.dp))
             }
         }
-        items(messages, key = { it.id }) { AiMessageBubble(it) }
+        items(messages, key = { it.id }) { message ->
+            AiMessageBubble(message, attachments.filter { it.messageId == message.id })
+        }
     }
 }
 
@@ -339,7 +384,7 @@ private fun AiDisclaimerCard(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun AiMessageBubble(message: AiChatMessage) {
+private fun AiMessageBubble(message: AiChatMessage, attachments: List<AiChatAttachment>) {
     val isUser = message.role == "user"
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
         Column(
@@ -356,6 +401,24 @@ private fun AiMessageBubble(message: AiChatMessage) {
                 shape = MaterialTheme.shapes.large,
                 color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
             ) { Text(message.content, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(16.dp)) }
+            attachments.forEach { attachment ->
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.semantics {
+                        contentDescription = "Tệp đính kèm ${attachment.name}, ${attachment.byteSize} byte"
+                    },
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Default.AttachFile, contentDescription = null, Modifier.size(18.dp))
+                        Text(attachment.name, maxLines = 1, style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
             if (!isUser && message.references.isNotEmpty()) {
                 Text("Dữ liệu đã dùng: ${message.references.joinToString { it.label.ifBlank { it.id } }}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

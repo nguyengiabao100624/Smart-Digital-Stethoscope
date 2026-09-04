@@ -1,6 +1,14 @@
 # Smart Health - New Chat Context
 
-Last updated: 2026-09-03
+Last updated: 2026-09-04
+
+## 2026-09-04 AI conversation-management and current-device checkpoint
+
+- Android AI history is now complete for the active-history contract: a user can select a server-backed conversation, see attachments that were bound to each confirmed message, and archive a conversation through an explicit confirmation dialog. Archiving uses the existing tenant/user-scoped backend endpoint, removes only the server-confirmed item, and loads the next confirmed conversation without an optimistic local delete.
+- Fresh Android evidence on the concurrent AGP `9.4.0` / Gradle `9.7.1` worktree is PASS: focused `AiChatViewModelTest`, full `testDebugUnitTest`, `lintDebug`, `assembleDebug`, and `assembleDebugAndroidTest`. The installed APK is `48,729,342` bytes, SHA-256 `97B536E63832930826423B49E81D201AA491870B90D5812410D42FB9F32C612B`; AndroidTest SHA-256 is `A0F9603434B3934FE652AA26D5260400360AB3648B4A79E1FDDFB8948E761677`.
+- Xiaomi `21081111RG` accepted both APKs, but it entered `Asleep` during the four-minute build. MIUI denied shell input injection, so the fresh Compose run correctly remains **BLOCKED BY DEVICE STATE**, not PASS and not an app crash; logcat shows the test Activity sleeping with no fatal exception. The test package was removed, the normal APK was reinstalled and its `MainActivity` was started. The App still requires a real user login before authenticated history, STT, attachment-picker and provider-response HIL can be credited.
+- Backend AI contracts remain `12/12` and audio-v2 remains `4/4`. Firmware production still builds (`RAM 17.0%`, app-slot flash `18.8%`). COM9 and Xiaomi are detected, but the board must not receive the generic artifact without matching enrolled device material/current CA. Clear heart/lung listening still requires authenticated WSS audio on the phone; active raw I2S counters alone are not listening proof.
+- Render remains healthy at `git-329c998160ff`; GitHub Smart Health CI run `33758860584` for the exact full commit completed successfully. This Android-only checkpoint does not require or justify a backend redeploy.
 
 ## 2026-09-03 audio/AI production and device checkpoint
 

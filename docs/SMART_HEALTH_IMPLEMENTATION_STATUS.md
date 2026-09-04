@@ -1,6 +1,13 @@
 # Smart Health - Implementation Status
 
-Last updated: 2026-09-03
+Last updated: 2026-09-04
+
+## 2026-09-04 AI history completion status
+
+- **PASS/SOURCE+BUILD:** Android now wires the existing archive API into the AI history surface with confirmation, replay-safe server state, next-conversation loading and attachment metadata on confirmed messages. Focused ViewModel tests plus full Android unit/lint/debug/test-APK assembly pass.
+- **PASS/INSTALL, BLOCKED/VISUAL:** APK `97B536E6...2C612B` is installed on Xiaomi. A new physical Compose attempt was invalid because the phone slept; MIUI blocks ADB wake/input injection. No app crash was observed. Keep the earlier physical 200%-font result, but do not count this new attempt until the phone is awake.
+- **PASS/CONTRACT:** Backend AI `12/12`, audio-v2 `4/4`, firmware production build, Render release `git-329c998160ff` and exact-commit GitHub CI are green.
+- **OPEN/RUNTIME:** provider-backed replies need approved `AI_PROVIDER_*` values; authenticated patient/doctor STT and picker need an App login; heart/lung audibility needs a matching enrolled firmware identity/CA, available Wi-Fi, authenticated WSS and actual phone playback. COM9 visibility and nonzero I2S samples do not close those gates.
 
 ## 2026-09-03 audio/AI promotion status
 

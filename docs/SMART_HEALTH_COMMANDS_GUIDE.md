@@ -1,6 +1,25 @@
 # Smart Health - Commands Guide
 
-Last updated: 2026-09-03
+Last updated: 2026-09-04
+
+## 2026-09-04 AI history and device verification
+
+```powershell
+Set-Location D:\Study\KLTN\smart-health-android
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --console=plain --max-workers=2
+
+$adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+& $adb install -r -t .\app\build\outputs\apk\debug\app-debug.apk
+& $adb install -r -t .\app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
+& $adb shell am instrument -w -r -e class com.example.smart_health_android.ui.screens.AIAssistantScreenTest com.example.smart_health_android.test/androidx.test.runner.AndroidJUnitRunner
+& $adb shell pm uninstall com.example.smart_health_android.test
+& $adb install -r -t .\app\build\outputs\apk\debug\app-debug.apk
+& $adb shell am start -n com.example.smart_health_android/.MainActivity
+```
+
+If `dumpsys power` reports `mWakefulness=Asleep`, do not count `No compose hierarchies found` as a product PASS or failure until the device is physically awake. This Xiaomi rejects shell input injection, so tooling cannot bypass that device-state gate.
+
+Current artifact hashes: App `97B536E63832930826423B49E81D201AA491870B90D5812410D42FB9F32C612B`; AndroidTest `A0F9603434B3934FE652AA26D5260400360AB3648B4A79E1FDDFB8948E761677`.
 
 ## 2026-09-03 live audio/AI verification
 

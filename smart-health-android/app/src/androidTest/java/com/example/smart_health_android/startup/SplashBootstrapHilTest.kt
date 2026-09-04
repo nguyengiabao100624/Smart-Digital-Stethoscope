@@ -25,8 +25,7 @@ class SplashBootstrapHilTest {
 
             step("backend health") { assertTrue(gateway.checkHealth()) }
             val owner = step("Firebase owner pin") { gateway.pinnedFirebaseOwner() }
-                ?: return@runBlocking
-            assertNotNull(owner)
+            assertNotNull("No authenticated Firebase owner is pinned on the physical phone.", owner)
 
             val token = step("Firebase ID token") { gateway.existingSessionToken() }
             assertTrue("Firebase owner exists but no ID token was available.", !token.isNullOrBlank())

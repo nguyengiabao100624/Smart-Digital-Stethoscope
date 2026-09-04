@@ -387,6 +387,36 @@ function expectedAuthority(ota = activeOta()) {
   };
 }
 
+test("PostgreSQL device command persistence converts blank optional timestamps to null", async () => {
+  const state = sqlHarness();
+  const command = {
+    ...activeCommand(),
+    id: "command_without_optional_timestamps",
+    type: "audio.session.start",
+    correlationId: "scan_without_optional_timestamps",
+    executionExpiresAt: "",
+    queuedAt: "",
+    deliveredAt: "",
+    acknowledgedAt: "",
+    applyingAt: "",
+    appliedAt: "",
+    failedAt: "",
+    expiredAt: "",
+  };
+
+  await state.repositories.deviceCommands.save(command);
+
+  const persisted = state.persisted().commandRow;
+  assert.equal(persisted.execution_expires_at, null);
+  assert.equal(persisted.queued_at, null);
+  assert.equal(persisted.delivered_at, null);
+  assert.equal(persisted.acknowledged_at, null);
+  assert.equal(persisted.applying_at, null);
+  assert.equal(persisted.applied_at, null);
+  assert.equal(persisted.failed_at, null);
+  assert.equal(persisted.expired_at, null);
+});
+
 test("a stale download failure cannot regress an OTA that already started downloading", async () => {
   const { db, repositories } = harness({ status: "downloading" });
   const failed = transitionDeviceOtaLifecycle(db.devices[0].ota, "failed", {

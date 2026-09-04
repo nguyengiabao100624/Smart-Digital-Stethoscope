@@ -2,6 +2,25 @@
 
 Last updated: 2026-09-04
 
+## 2026-09-04 fresh AI/audio verification commands
+
+```powershell
+# Physical Android suites (install the matching app and test APK first)
+$adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+& $adb shell am instrument -w -r -e class com.example.smart_health_android.ui.screens.AIAssistantScreenTest com.example.smart_health_android.test/androidx.test.runner.AndroidJUnitRunner
+& $adb shell am instrument -w -r -e class com.example.smart_health_android.ui.screens.DoctorDashboardScreenTest,com.example.smart_health_android.ui.screens.NewScanScreenTest,com.example.smart_health_android.ui.screens.RecordDetailScreenTest com.example.smart_health_android.test/androidx.test.runner.AndroidJUnitRunner
+& $adb shell pm uninstall com.example.smart_health_android.test
+
+# Provider readiness belongs only on the backend host
+AI_PROVIDER_ENDPOINT=https://provider.example/v1/chat/completions
+AI_PROVIDER_API_KEY=<server-only secret>
+AI_PROVIDER_MODEL=<approved model>
+AI_PROVIDER_NAME=openai_compatible
+AI_PROVIDER_TIMEOUT_MS=15000
+```
+
+Current physical results are AI `OK (3 tests)` and doctor/scan/recording `OK (9 tests)`. Do not treat the current COM9 boot as auscultation PASS: `Louisnguyen` returns `201 NO_AP_FOUND`, WSS/UDP are zero, and both mic slots stayed at `RMS=1`, `peak=1` across 36 windows including a 180 Hz stimulus. Restore board connectivity/enrollment and inspect both microphone signal paths before any live-audio, scan or OTA claim.
+
 ## 2026-09-04 AI history and device verification
 
 ```powershell

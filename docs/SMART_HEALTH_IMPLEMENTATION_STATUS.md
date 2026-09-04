@@ -2,6 +2,13 @@
 
 Last updated: 2026-09-04
 
+## 2026-09-04 full AI/recording regression and hardware truth
+
+- **PASS/ANDROID DEVICE UI:** Xiaomi instrumentation passes AI assistant `3/3` and doctor dashboard/scan/recording `9/9`. The shared doctor/patient assistant has history/archive, attachments, live right-entering waveform, Vietnamese STT stop-to-draft and explicit send. The installed normal APK hash is `BD4C50BF...AB7BDA`; the AndroidTest package is removed.
+- **PASS/SOURCE+BUILD:** backend AI/audio/aggregate checks, Android unit tests, Admin `209/209` plus lint/build, doctor-focused Portal `141/141` plus lint/build, and firmware contracts/build all pass. Firebase Admin/Portal and the warmed Render health route return `200`.
+- **PARTIAL/AI RUNTIME:** the provider adapter is complete but intentionally fails closed until `AI_PROVIDER_ENDPOINT`, `AI_PROVIDER_API_KEY` and `AI_PROVIDER_MODEL` are configured server-side. Real speech, picker and authorized-account answers still require a signed-in patient/doctor session.
+- **BLOCKED/PHYSICAL AUDIO:** COM9 boots the intended ESPTouch/I2S/audio-profile firmware, but its saved Wi-Fi is absent (`201 NO_AP_FOUND`) and both mic slots currently stay at `RMS=1`, `peak=1` even during a 180 Hz stimulus. WSS/UDP are `0`; clear heart/lung listening, durable scan and OTA/rollback remain uncredited until Wi-Fi/enrollment and the physical microphone signal are restored.
+
 ## 2026-09-04 AI physical UI result (supersedes the blocked visual row below)
 
 - **PASS/DEVICE UI:** debug-only test-host startup was hardened for long Xiaomi runs. Physical instrumentation now passes `2/2` for dark/200%-font composer accessibility and explicit History -> Archive confirmation. Normal APK `0CA31CF5...5C915D` is installed, the test package is removed and the production `MainActivity` is foreground.

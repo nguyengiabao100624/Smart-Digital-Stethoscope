@@ -2,6 +2,16 @@
 
 Last updated: 2026-09-04
 
+## 2026-09-04 fresh Xiaomi, COM9, audio and AI verification
+
+- Continue from source commit `195169f4`. The current debug APK is SHA-256 `BD4C50BF8AB74E0BF8FB7AA1D84D0DAEEB19700D77BCBA733B93E2B206AB7BDA`; Xiaomi `21081111RG` accepts the production package and the instrumentation package was removed after verification.
+- Fresh physical Android instrumentation is PASS: `AIAssistantScreenTest` `3/3` proves patient/doctor composer parity at 200% font, explicit archive confirmation, a live right-entering 28-bar waveform and stop-to-review transcription that does not send before the user presses Send. Doctor dashboard, scan and record-detail instrumentation is also PASS `9/9`, including 48dp actions, offline/readiness states, waveform semantics and view-only authority.
+- Fresh source/build gates are PASS: backend aggregate check plus AI `12/12`, audio-v2 `4/4` and audio worker `6/6`; Admin contracts `209/209`, lint and 17-route Firebase build; doctor-focused Portal contracts `141/141`, lint and Firebase build; Android unit tests; firmware source contracts `5/5` and ESP32-S3 production build (`RAM 17.0%`, app-slot flash `18.8%`, `1,184,477` bytes).
+- Live surfaces answer successfully. Admin and Portal Firebase Hosting return `200`. Render had one free-tier cold request timeout, then returned `200` in `0.512 s`; its implementation marker remains `git-329c998160ff`, which is expected because the latest source commit changes Android/docs rather than the backend.
+- COM9 is physically present as CH343. Read-only reset/serial proof shows ESP32-S3 revision 0.2, ESPTouch V2 KDF self-test PASS, BLE disabled, I2S initialized, bounded reconnect and heart/lung filter profiles. The saved SSID `Louisnguyen` currently fails with Wi-Fi reason `201 NO_AP_FOUND`, therefore WSS and UDP remain `0` and the phone cannot receive live auscultation audio.
+- A fresh 180 Hz speaker stimulus across 36 telemetry windows left both physical mic slots at `RMS=1`, `peak=1`. Older board evidence had RMS in the thousands, so clear heart/lung capture is **not** credited. Before flashing or tuning software, inspect board power/contact/wiring and the two MSM261S4030H0 signal paths; the current pin/format configuration matches the previously working image.
+- Remaining real-runtime boundaries are narrow and explicit: authenticate a patient and doctor in the App; provision an available 2.4 GHz Wi-Fi through the secure field; restore the matching enrolled device identity/trust; repair the physical mic signal; and configure an approved server-only AI provider. Do not pass credentials through ADB, source or logs, and do not flash a generic artifact over an enrolled board.
+
 ## 2026-09-04 AI physical UI closure (supersedes the sleeping-device attempt below)
 
 - The debug-only Compose host now sets show-when-locked, turn-screen-on and keep-screen-on during `onCreate`, before the test Activity can be suspended by MIUI. It does not affect the production Activity and does not bypass a secure user login.

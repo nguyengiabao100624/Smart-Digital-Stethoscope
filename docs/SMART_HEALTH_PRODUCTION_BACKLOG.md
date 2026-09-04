@@ -2,6 +2,18 @@
 
 Last updated: 2026-09-04
 
+## 2026-09-04 fresh AI/audio closure checklist
+
+- [x] Pass Xiaomi AI assistant instrumentation `3/3`: patient/doctor parity, 200% font, archive confirmation, live waveform and stop-to-review with no implicit send.
+- [x] Pass Xiaomi doctor dashboard/scan/record-detail instrumentation `9/9`, including permission/readiness/offline/view-only behavior and accessible action sizing.
+- [x] Pass current backend AI/audio/aggregate, Android unit, Admin, doctor Portal and firmware source/build gates; verify Firebase Admin/Portal and warmed Render health return `200`.
+- [x] Remove the AndroidTest package and retain only `com.example.smart_health_android`; current APK SHA-256 is `BD4C50BF8AB74E0BF8FB7AA1D84D0DAEEB19700D77BCBA733B93E2B206AB7BDA`.
+- [ ] Sign in as both patient and doctor, accept the runtime microphone dialog, verify real Vietnamese stop-to-review STT, pick/download a real private attachment and validate an authorized measurement answer. A shell cannot safely impersonate this user boundary.
+- [ ] Configure the approved external provider in Render using server-only `AI_PROVIDER_ENDPOINT`, `AI_PROVIDER_API_KEY`, `AI_PROVIDER_MODEL`, optional name and bounded timeout; run a non-sensitive canary before allowing PHI.
+- [ ] Restore an available 2.4 GHz network and matching enrolled identity/trust for COM9. Current saved `Louisnguyen` fails with `201 NO_AP_FOUND`, so WSS/UDP correctly remain disabled.
+- [ ] Inspect/reseat/power-test both MSM261S4030H0 paths: both slots remain `RMS=1`, `peak=1` across 36 windows and a 180 Hz stimulus. Only after non-trivial signal returns may the candidate be credited for clear heart/lung playback, durable scan, signed OTA and forced rollback.
+- [ ] Keep new workspace/business Portal expansion in future development. Complete and maintain the doctor Portal surface plus system-wide Platform Admin for the current thesis scope.
+
 ## 2026-09-04 AI history and physical follow-up
 
 - [x] Add Android conversation archive with explicit confirmation and server-confirmed next-conversation state.

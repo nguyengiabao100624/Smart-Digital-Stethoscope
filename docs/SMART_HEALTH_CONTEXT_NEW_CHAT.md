@@ -2,6 +2,13 @@
 
 Last updated: 2026-09-04
 
+## 2026-09-04 AI physical UI closure (supersedes the sleeping-device attempt below)
+
+- The debug-only Compose host now sets show-when-locked, turn-screen-on and keep-screen-on during `onCreate`, before the test Activity can be suspended by MIUI. It does not affect the production Activity and does not bypass a secure user login.
+- Fresh Xiaomi `21081111RG` instrumentation passes `2/2`: the shared patient/doctor composer remains usable in dark theme at 200% font, and History -> Archive displays an explicit confirmation before the server-backed archive action. The test package was removed; normal App APK SHA-256 `0CA31CF520DFF1A1DED3045B3194476A900115728B515105957EBF87EF5C915D` is installed and `MainActivity` is awake in foreground. AndroidTest SHA-256 is `A92353B6D288AD8CA70E97D6F76F4CEBF2653F5DEB692BBF3CF2A9ED9AC13CF4`.
+- Platform Admin remains green with `209/209` contracts, lint and the 17-route Firebase production build. This checkpoint does not change the already-live Admin artifact because no Admin source changed.
+- Authenticated patient/doctor STT, real file selection, provider reply and WSS heart/lung listening remain separate runtime gates. The normal App is currently at login after reinstall; no credential was extracted or injected.
+
 ## 2026-09-04 AI conversation-management and current-device checkpoint
 
 - Android AI history is now complete for the active-history contract: a user can select a server-backed conversation, see attachments that were bound to each confirmed message, and archive a conversation through an explicit confirmation dialog. Archiving uses the existing tenant/user-scoped backend endpoint, removes only the server-confirmed item, and loads the next confirmed conversation without an optimistic local delete.

@@ -17,9 +17,9 @@ $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
 & $adb shell am start -n com.example.smart_health_android/.MainActivity
 ```
 
-If `dumpsys power` reports `mWakefulness=Asleep`, do not count `No compose hierarchies found` as a product PASS or failure until the device is physically awake. This Xiaomi rejects shell input injection, so tooling cannot bypass that device-state gate.
+The debug-only test host now requests show-when-locked/turn-screen-on/keep-screen-on in `onCreate`. It makes long Compose suites stable without changing the normal App Activity or bypassing authentication. If a different secure system overlay remains above the test Activity, treat that run as blocked rather than injecting input.
 
-Current artifact hashes: App `97B536E63832930826423B49E81D201AA491870B90D5812410D42FB9F32C612B`; AndroidTest `A0F9603434B3934FE652AA26D5260400360AB3648B4A79E1FDDFB8948E761677`.
+Current artifact hashes: App `0CA31CF520DFF1A1DED3045B3194476A900115728B515105957EBF87EF5C915D`; AndroidTest `A92353B6D288AD8CA70E97D6F76F4CEBF2653F5DEB692BBF3CF2A9ED9AC13CF4`. Physical Xiaomi result: `OK (2 tests)`.
 
 ## 2026-09-03 live audio/AI verification
 

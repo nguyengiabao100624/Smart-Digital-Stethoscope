@@ -7,8 +7,8 @@ Last updated: 2026-09-04
 - [x] Add Android conversation archive with explicit confirmation and server-confirmed next-conversation state.
 - [x] Show metadata for files already bound to confirmed AI messages; do not expose storage URLs or claim provider interpretation.
 - [x] Pass focused AI ViewModel tests, full Android unit/lint/APK/test-APK build, backend AI/audio contracts and firmware production build.
-- [x] Install APK `97B536E6...2C612B` on Xiaomi and remove the test package after the attempted run.
-- [ ] Re-run physical AI Compose when Xiaomi is awake; then authenticate as patient and doctor to prove permission prompt, stop-to-review STT, file picker, history/archive, provider response, lifecycle and TalkBack.
+- [x] Harden the debug-only Compose host against Xiaomi sleep, install APK `0CA31CF5...5C915D`, pass physical AI Compose `2/2`, remove the test package and leave normal `MainActivity` awake.
+- [ ] Authenticate as patient and doctor to prove permission prompt, stop-to-review STT, real file picker, provider response, lifecycle and TalkBack against production data. History/archive UI itself is physically PASS.
 - [ ] Configure an approved external AI provider through `AI_PROVIDER_NAME`, `AI_PROVIDER_ENDPOINT`, `AI_PROVIDER_API_KEY`, `AI_PROVIDER_MODEL` and optional bounded timeout; do not place its key in source or the client.
 - [ ] Provision/restore a matching enrolled COM9 identity and current trust material, then prove heart/lung profiles through WSS playback, durable scan and OTA/rollback before claiming clear auscultation.
 

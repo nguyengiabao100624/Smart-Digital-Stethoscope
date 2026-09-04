@@ -2,6 +2,12 @@
 
 Last updated: 2026-09-04
 
+## 2026-09-04 AI physical UI result (supersedes the blocked visual row below)
+
+- **PASS/DEVICE UI:** debug-only test-host startup was hardened for long Xiaomi runs. Physical instrumentation now passes `2/2` for dark/200%-font composer accessibility and explicit History -> Archive confirmation. Normal APK `0CA31CF5...5C915D` is installed, the test package is removed and the production `MainActivity` is foreground.
+- **PASS/ADMIN REGRESSION:** Platform Admin contracts `209/209`, lint and Firebase production build of all 17 routes pass. No Admin deploy was needed because this slice changed only Android/test/docs.
+- **OPEN/AUTHENTICATED RUNTIME:** App login, runtime microphone consent, Vietnamese STT output, a real picked attachment and an external provider reply still require a real authenticated session/provider. Heart/lung audibility remains open until COM9 has matching enrolled identity/trust, Wi-Fi, WSS and phone playback.
+
 ## 2026-09-04 AI history completion status
 
 - **PASS/SOURCE+BUILD:** Android now wires the existing archive API into the AI history surface with confirmation, replay-safe server state, next-conversation loading and attachment metadata on confirmed messages. Focused ViewModel tests plus full Android unit/lint/debug/test-APK assembly pass.

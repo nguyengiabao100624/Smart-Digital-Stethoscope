@@ -5049,3 +5049,30 @@ $pioExe = 'C:\Users\baobe\.platformio\penv\Scripts\platformio.exe'
 ```
 
 The personal Admin inbox uses `/api/v1/notifications/inbox`; `/api/v1/notifications` remains the distinct campaign-recipient and provider-delivery surface. Never merge their rows in client state. `DELETE /api/v1/notifications/inbox` requires `Idempotency-Key` and deletes only the authenticated account's active-workspace inbox.
+
+## 2026-09-04 Android AI voice and production-startup checks
+
+Run the deterministic JVM/build gate:
+
+```powershell
+Set-Location 'D:\Study\KLTN\smart-health-android'
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
+```
+
+The production connectivity probes are opt-in and must run only on an attached test phone. They log no bearer token, Firebase ID token, response body or credential:
+
+```powershell
+$adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+& $adb install -r -t app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
+& $adb shell am instrument -w -r `
+  -e shcareBackendHealthHil true `
+  -e class com.example.smart_health_android.data.ProductionBackendHealthHilTest `
+  com.example.smart_health_android.test/androidx.test.runner.AndroidJUnitRunner
+& $adb shell am instrument -w -r `
+  -e shcareSplashHil true `
+  -e class com.example.smart_health_android.startup.SplashBootstrapHilTest `
+  com.example.smart_health_android.test/androidx.test.runner.AndroidJUnitRunner
+& $adb uninstall com.example.smart_health_android.test
+```
+
+`AIAssistantScreenTest` verifies attachment entry points, history controls and the voice invariant: Stop places the final transcript in the draft and does not send until the explicit Send action. The production AI provider remains disabled until a provider/model and secret are approved; do not place keys in source, Gradle properties, ADB arguments or test output.

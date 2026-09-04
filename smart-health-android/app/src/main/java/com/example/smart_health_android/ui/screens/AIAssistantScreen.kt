@@ -81,6 +81,7 @@ import com.example.smart_health_android.ai.AiChatUiState
 import com.example.smart_health_android.ai.AiChatViewModel
 import com.example.smart_health_android.ai.AndroidSpeechTranscriber
 import com.example.smart_health_android.ai.LocalAiAttachment
+import com.example.smart_health_android.ai.SpeechTranscriber
 import com.example.smart_health_android.ai.SpeechTranscriberListener
 import com.example.smart_health_android.data.AiChatAttachment
 import com.example.smart_health_android.data.AiChatMessage
@@ -118,6 +119,11 @@ private fun InputStream.readAiAttachmentBytes(): ByteArray {
 fun AIAssistantScreen(
     onNavigateBack: () -> Unit,
     viewModel: AiChatViewModel = viewModel(),
+    speechTranscriberFactory: (android.content.Context, SpeechTranscriberListener) -> SpeechTranscriber =
+        { context, listener -> AndroidSpeechTranscriber(context, listener) },
+    microphonePermissionGranted: (android.content.Context) -> Boolean = { context ->
+        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    },
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -129,7 +135,7 @@ fun AIAssistantScreen(
     val currentAction by rememberUpdatedState(viewModel::onAction)
 
     val speechTranscriber = remember(context) {
-        AndroidSpeechTranscriber(context, object : SpeechTranscriberListener {
+        speechTranscriberFactory(context, object : SpeechTranscriberListener {
             override fun onReady() {
                 isRecording = true
                 voiceStatus = "Đang nghe…"
@@ -159,7 +165,7 @@ fun AIAssistantScreen(
     fun startVoiceInput() {
         voiceStatus = "Đang chuẩn bị micro…"
         amplitudes.indices.forEach { index -> amplitudes[index] = 4 }
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+        if (microphonePermissionGranted(context)) {
             speechTranscriber.start()
         } else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
     }
@@ -472,11 +478,19 @@ private fun AiChatComposer(
                 modifier = Modifier.fillMaxWidth().testTag("ai_assistant.input"),
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onAttach, enabled = !state.isSending && !state.isUploading) {
+                IconButton(
+                    onClick = onAttach,
+                    enabled = !state.isSending && !state.isUploading,
+                    modifier = Modifier.testTag("ai_assistant.attach"),
+                ) {
                     if (state.isUploading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                     else Icon(Icons.Default.AttachFile, contentDescription = "Thêm hình hoặc tệp")
                 }
-                IconButton(onClick = onVoice, enabled = !state.isSending) {
+                IconButton(
+                    onClick = onVoice,
+                    enabled = !state.isSending,
+                    modifier = Modifier.testTag("ai_assistant.voice"),
+                ) {
                     Icon(if (isRecording) Icons.Default.Stop else Icons.Default.Mic, contentDescription = if (isRecording) "Dừng ghi âm" else "Nhập bằng giọng nói")
                 }
                 Spacer(Modifier.weight(1f))
@@ -510,7 +524,7 @@ private fun AiChatComposer(
 private fun VoiceWaveform(levels: List<Int>, active: Boolean) {
     val color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
     Canvas(
-        modifier = Modifier.fillMaxWidth().height(38.dp).semantics {
+        modifier = Modifier.fillMaxWidth().height(38.dp).testTag("ai_assistant.waveform").semantics {
             contentDescription = if (active) "Sóng âm đang ghi" else "Sóng âm đã dừng"
         },
     ) {

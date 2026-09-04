@@ -6,6 +6,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -16,6 +17,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.smart_health_android.ai.AiChatRepository
 import com.example.smart_health_android.ai.AiChatViewModel
 import com.example.smart_health_android.ai.LocalAiAttachment
+import com.example.smart_health_android.ai.SpeechTranscriber
+import com.example.smart_health_android.ai.SpeechTranscriberListener
 import com.example.smart_health_android.data.AiChatAttachment
 import com.example.smart_health_android.data.AiChatAvailability
 import com.example.smart_health_android.data.AiChatSession
@@ -103,6 +106,42 @@ class AIAssistantScreenTest {
         }
     }
 
+    @Test
+    fun stoppingVoiceInputPlacesTranscriptInDraftAndNeverSendsUntilConfirmed() {
+        val repository = RecordingRepository()
+        val viewModel = AiChatViewModel(repository)
+        lateinit var transcriber: TestSpeechTranscriber
+
+        composeRule.setContent {
+            ShcareMobileTheme(mode = ShcareThemeMode.System, useDynamicColor = false) {
+                AIAssistantScreen(
+                    onNavigateBack = {},
+                    viewModel = viewModel,
+                    speechTranscriberFactory = { _, listener ->
+                        TestSpeechTranscriber(listener).also { transcriber = it }
+                    },
+                    microphonePermissionGranted = { true },
+                )
+            }
+        }
+
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            viewModel.uiState.value.availability.available
+        }
+        composeRule.onNodeWithTag("ai_assistant.voice", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithTag("ai_assistant.waveform").assertIsDisplayed()
+        composeRule.onNodeWithTag("ai_assistant.voice", useUnmergedTree = true).performClick()
+
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            viewModel.uiState.value.input == "Nhịp tim nghe đều" && !transcriber.recording
+        }
+        composeRule.onNodeWithTag("ai_assistant.input").assertTextContains("Nhịp tim nghe đều")
+        check(repository.sendCalls == 0) { "Stopping voice input must not send the draft" }
+
+        composeRule.onNodeWithTag("ai_assistant.send", useUnmergedTree = true).performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000L) { repository.sendCalls == 1 }
+    }
+
     private object EmptyAvailableRepository : AiChatRepository {
         private val availability = AiChatAvailability(
             available = true,
@@ -183,5 +222,72 @@ class AIAssistantScreenTest {
         companion object {
             const val CONVERSATION_ID = "conversation-history"
         }
+    }
+
+    private class TestSpeechTranscriber(
+        private val listener: SpeechTranscriberListener,
+    ) : SpeechTranscriber {
+        var recording = false
+            private set
+
+        override fun isAvailable(): Boolean = true
+
+        override fun start() {
+            recording = true
+            listener.onReady()
+            listener.onAmplitude(82)
+            listener.onPartialTranscript("Nhịp tim")
+        }
+
+        override fun stop() {
+            recording = false
+            listener.onFinalTranscript("Nhịp tim nghe đều")
+            listener.onStopped()
+        }
+
+        override fun cancel() {
+            recording = false
+            listener.onStopped()
+        }
+
+        override fun destroy() = Unit
+    }
+
+    private class RecordingRepository : AiChatRepository {
+        private val availability = AiChatAvailability(available = true, provider = "test-provider")
+        private val conversation = AiConversation(id = "conversation-recording", title = "Kiểm tra ghi âm")
+        var sendCalls = 0
+            private set
+
+        override suspend fun listConversations(): AiConversationList =
+            AiConversationList(listOf(conversation), availability)
+
+        override suspend fun createConversation(): AiConversation = conversation
+
+        override suspend fun load(conversationId: String): AiChatSession =
+            AiChatSession(emptyList(), availability, conversation)
+
+        override suspend fun archive(conversationId: String): AiConversation = conversation
+
+        override suspend fun send(
+            conversationId: String,
+            message: String,
+            attachmentIds: List<String>,
+            idempotencyKey: String,
+        ): AiChatSession {
+            sendCalls += 1
+            return AiChatSession(emptyList(), availability, conversation)
+        }
+
+        override suspend fun upload(
+            conversationId: String,
+            attachment: LocalAiAttachment,
+        ): AiChatAttachment = AiChatAttachment(
+            id = "attachment-recording",
+            conversationId = conversationId,
+            name = attachment.name,
+            contentType = attachment.contentType,
+            byteSize = attachment.bytes.size.toLong(),
+        )
     }
 }

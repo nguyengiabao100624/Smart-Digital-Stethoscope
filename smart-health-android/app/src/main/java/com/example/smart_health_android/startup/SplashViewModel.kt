@@ -240,6 +240,11 @@ class SplashViewModel(
         viewModelScope.launch {
             try {
                 val firebaseOwner = gateway.pinnedFirebaseOwner()
+                if (firebaseOwner == null) {
+                    requirePinnedSession()
+                    _effects.send(SplashUiEffect.NavigateToLogin)
+                    return@launch
+                }
                 check(gateway.checkHealth()) {
                     "Máy chủ chưa sẵn sàng. Vui lòng thử lại."
                 }
@@ -248,14 +253,9 @@ class SplashViewModel(
                 val existingSessionToken = gateway.existingSessionToken()
                 requirePinnedSession()
                 if (existingSessionToken.isNullOrBlank()) {
-                    check(firebaseOwner == null) { STALE_SPLASH_SESSION_MESSAGE }
-                    requirePinnedSession()
-                    _effects.send(SplashUiEffect.NavigateToLogin)
-                    return@launch
+                    error("Phiên Firebase hiện tại không trả về mã xác thực.")
                 }
-                val authenticatedFirebaseOwner = requireNotNull(firebaseOwner) {
-                    STALE_SPLASH_SESSION_MESSAGE
-                }
+                val authenticatedFirebaseOwner = firebaseOwner
 
                 val verified = gateway.reloadCurrentUser()
                 requirePinnedSession()

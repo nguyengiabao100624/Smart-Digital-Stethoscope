@@ -3239,3 +3239,16 @@ KLTN report artifacts generated from this evidence set:
 - [x] Fix the Admin-allocation `unassigned`/canonical-owner mismatch discovered by the first live canary; keep a truly ownerless inventory device rejected with `409`.
 - [x] Confirm Render release `bcf42562ab7c` and pass public deployment plus the exact authenticated doctor/assigned-device ESPTouch V2 setup-session canary with HTTP `200`.
 - [x] Pass the exact signed-in physical dashboard → assigned device → Wi-Fi surface canary `1/1`; prove Add/release are absent, delete one-use auth material, remove the test APK, and leave the normal App signed in on the doctor dashboard.
+
+## 2026-09-04 — AI assistant, speech composer and startup recovery
+
+- [x] Keep one Shcare-styled AI Assistant for patient and doctor roles with user/workspace-scoped history and authorized health-context retrieval.
+- [x] Add private image/file attachment selection, upload binding and persisted message metadata; do not expose provider secrets or cross-tenant records.
+- [x] Add native speech recognition with live amplitude waveform and stop-to-draft review; require a separate explicit Send action.
+- [x] Add deterministic speech-transcriber injection and prove the physical Compose voice journey `3/3` on Xiaomi.
+- [x] Add opt-in production backend and splash-boundary HIL tests that report only exception type/boundary, never tokens or response bodies.
+- [x] Remove the redundant backend health gate from signed-out startup; preserve fail-closed validation for an existing Firebase session.
+- [x] Pass Android full unit/lint/assemble and install APK `BD4C50BF8AB74E0BF8FB7AA1D84D0DAEEB19700D77BCBA733B93E2B206AB7BDA` on Xiaomi.
+- [x] Reconfirm backend AI/audio gates, Admin gate, doctor Portal gate and firmware target build.
+- [ ] Configure and approve an external AI provider/model before claiming real inference, speech-to-text beyond Android's platform recognizer, or attachment-content analysis.
+- [ ] Capture a fresh credentialed COM9 → production WSS → two-mic audio → durable scan → signed OTA/rollback HIL with the enrolled image; source/build proof does not close this row.

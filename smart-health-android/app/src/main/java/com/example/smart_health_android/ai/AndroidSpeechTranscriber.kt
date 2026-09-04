@@ -17,17 +17,25 @@ interface SpeechTranscriberListener {
     fun onError(message: String)
 }
 
+interface SpeechTranscriber {
+    fun isAvailable(): Boolean
+    fun start()
+    fun stop()
+    fun cancel()
+    fun destroy()
+}
+
 class AndroidSpeechTranscriber(
     context: Context,
     private val listener: SpeechTranscriberListener,
-) : RecognitionListener {
+) : SpeechTranscriber, RecognitionListener {
     private val appContext = context.applicationContext
     private var recognizer: SpeechRecognizer? = null
     private var stoppedByUser = false
 
-    fun isAvailable(): Boolean = SpeechRecognizer.isRecognitionAvailable(appContext)
+    override fun isAvailable(): Boolean = SpeechRecognizer.isRecognitionAvailable(appContext)
 
-    fun start() {
+    override fun start() {
         if (!isAvailable()) {
             listener.onError("Thiết bị chưa có dịch vụ nhận dạng giọng nói.")
             return
@@ -48,18 +56,18 @@ class AndroidSpeechTranscriber(
         }
     }
 
-    fun stop() {
+    override fun stop() {
         stoppedByUser = true
         recognizer?.stopListening()
     }
 
-    fun cancel() {
+    override fun cancel() {
         stoppedByUser = true
         recognizer?.cancel()
         listener.onStopped()
     }
 
-    fun destroy() {
+    override fun destroy() {
         destroyRecognizer()
     }
 

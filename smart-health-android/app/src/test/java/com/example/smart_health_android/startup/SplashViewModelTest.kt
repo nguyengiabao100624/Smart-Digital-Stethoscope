@@ -75,8 +75,28 @@ class SplashViewModelTest {
         advanceUntilIdle()
 
         assertEquals(SplashUiEffect.NavigateToLogin, effect.await())
+        assertEquals(0, gateway.healthCalls)
+        assertEquals(0, gateway.sessionCalls)
         assertEquals(0, gateway.reloadCalls)
         assertEquals(0, gateway.authenticateCalls)
+    }
+
+    @Test
+    fun `logged out startup never blocks login on backend availability`() = runTest(dispatcher) {
+        val gateway = FakeSplashBootstrapGateway(
+            healthFailure = IOException("transient backend outage"),
+            initialOwner = null,
+            existingSessionToken = null,
+        )
+        val viewModel = SplashViewModel(gateway)
+        val effect = async { viewModel.effects.first() }
+
+        advanceUntilIdle()
+
+        assertEquals(SplashUiEffect.NavigateToLogin, effect.await())
+        assertEquals(SplashLoadState.Checking, viewModel.uiState.value.loadState)
+        assertEquals(0, gateway.healthCalls)
+        assertEquals(0, gateway.sessionCalls)
     }
 
     @Test
@@ -309,8 +329,6 @@ class SplashViewModelTest {
     fun `retry starts one new bootstrap attempt after failure`() = runTest(dispatcher) {
         val gateway = FakeSplashBootstrapGateway(
             healthResults = mutableListOf(false, true),
-            initialOwner = null,
-            existingSessionToken = null,
         )
         val viewModel = SplashViewModel(gateway)
         advanceUntilIdle()
@@ -321,7 +339,12 @@ class SplashViewModelTest {
         viewModel.onAction(SplashUiAction.Retry)
         advanceUntilIdle()
 
-        assertEquals(SplashUiEffect.NavigateToLogin, effect.await())
+        val authenticated = effect.await()
+        assertTrue(authenticated is SplashUiEffect.Authenticated)
+        authenticated as SplashUiEffect.Authenticated
+        assertEquals("patient", authenticated.user.id)
+        assertEquals("patient", authenticated.user.role)
+        assertEquals(OWNER_A, authenticated.firebaseOwner)
         assertEquals(2, gateway.healthCalls)
         assertEquals(1, gateway.sessionCalls)
     }

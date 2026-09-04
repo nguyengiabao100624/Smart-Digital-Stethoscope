@@ -2894,3 +2894,14 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - [x] Deploy Render release `bcf42562ab7c` and pass public health/auth/Admin/Portal rewrite smoke.
 - [x] Run the authenticated production canary for the exact assigned doctor/device: setup-session HTTP `200`, ESPTouch V2, AES-128.
 - [x] Pass the signed-in Xiaomi dashboard → assigned device → Wi-Fi surface canary `1/1`; Add/release remain absent without device-manage authority. One-use auth material was deleted before exchange, the test APK was removed and the normal App remains signed in.
+
+## 2026-09-04 — Remaining AI/audio production gates
+
+- [x] Implement and test mobile AI history, private attachments, patient/doctor routing, authorized health context, voice waveform and stop-to-draft review.
+- [x] Prevent signed-out users from being trapped behind a transient Render health probe; verify the configured production health path from inside the Xiaomi APK.
+- [x] Pass current Android unit/lint/assemble, physical AI Compose `3/3`, backend AI/audio suites, Admin and doctor Portal builds, and ESP32-S3 production compilation.
+- [ ] Select an approved external AI provider, configure its secret/model through the production secret manager and run redacted positive/negative inference canaries. Until then, the provider seam is ready but real model inference is `BLOCKED`.
+- [ ] Run authenticated attachment-content processing only after the selected provider's data-retention/PHI policy is approved; current attachments are private, persisted and represented as metadata, not falsely described as model-analyzed.
+- [ ] Flash only an enrolled, signed firmware image containing the correct device credential/CA material, then capture fresh COM9 evidence for association, WSS authentication, command ACK, both physical microphones, durable scan and signed OTA success/forced rollback.
+- [ ] Run a new unlocked Xiaomi visual/TalkBack sweep of the normal authenticated patient and doctor journeys. The test automation and installed APK are current, but the phone returned to secure keyguard after the run.
+- [ ] Keep workspace/business Portal expansion in the future roadmap; current Web scope is doctor Portal. Platform Admin and shared backend contracts remain active production surfaces.

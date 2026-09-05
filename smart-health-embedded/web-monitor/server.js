@@ -106,7 +106,10 @@ const { attachActor, createRequestContext, getRequestContext } = require("./src/
 const { createMqttControlPlane } = require("./src/mqttControlPlane");
 const { buildProductionReadiness } = require("./src/productionReadiness");
 const { assertRuntimeSecurity, resolveAuthMode } = require("./src/runtimeSecurity");
-const { buildRuntimeEndpointLogLines } = require("./src/runtimeEndpointLog");
+const {
+  buildRuntimeEndpointLogLines,
+  resolveUdpAudioEnabled,
+} = require("./src/runtimeEndpointLog");
 const { postOutboundWebhook } = require("./src/outboundWebhookSecurity");
 const { buildPushNotificationPayload } = require("./src/notificationPushPayload");
 const {
@@ -249,6 +252,7 @@ const TMP_DIR = path.join(DATA_DIR, "tmp");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 const DATA_BACKEND = resolveBackendFromEnv(process.env);
 const AUTH_MODE = resolveAuthMode(process.env);
+const UDP_AUDIO_ENABLED = resolveUdpAudioEnabled(process.env, AUTH_MODE);
 const FIREBASE_AUTH_ENABLED = isFirebaseAuthEnabled(process.env);
 const ALLOW_DEMO_AUTH = String(process.env.ALLOW_DEMO_AUTH || "").toLowerCase() === "true";
 const SHOULD_SEED_DEMO_DATA = AUTH_MODE === "demo";
@@ -26989,6 +26993,7 @@ function startNetworkServers() {
       publicBackendUrl: process.env.PUBLIC_BACKEND_URL || process.env.SMART_HEALTH_PUBLIC_URL,
       port: PORT,
       audioUdpPort: AUDIO_UDP_PORT,
+      udpAudioEnabled: UDP_AUDIO_ENABLED,
       localUrls: production ? [] : getLocalUrls(),
     });
     for (const line of endpointLines) {
@@ -26996,9 +27001,11 @@ function startNetworkServers() {
     }
   });
 
-  audioUdp.bind(AUDIO_UDP_PORT, HOST, () => {
-    console.log(`UDP audio listening on port ${AUDIO_UDP_PORT}`);
-  });
+  if (UDP_AUDIO_ENABLED) {
+    audioUdp.bind(AUDIO_UDP_PORT, HOST, () => {
+      console.log(`UDP audio listening on port ${AUDIO_UDP_PORT}`);
+    });
+  }
 
   setInterval(refreshAudioSourceStatus, 1000);
   const identityReconciliationInterval = setInterval(() => {
@@ -27136,7 +27143,7 @@ async function shutdownRuntime(signal) {
   } catch (err) {
     console.error(`Cannot complete ${signal} shutdown: ${err.message}`);
   } finally {
-    audioUdp.close();
+    if (UDP_AUDIO_ENABLED) audioUdp.close();
     if (server.listening) server.close(() => process.exit(0));
     else process.exit(0);
   }

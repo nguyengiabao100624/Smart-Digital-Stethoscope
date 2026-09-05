@@ -50,6 +50,11 @@ test("production container uses the migration-aware canonical start command", ()
     /buildRuntimeEndpointLogLines\(\{[\s\S]*?production,[\s\S]*?publicBackendUrl:/,
     "startup logging must distinguish production endpoints from local HIL guidance",
   );
+  assert.match(
+    serverSource,
+    /if \(UDP_AUDIO_ENABLED\) \{[\s\S]*?audioUdp\.bind/,
+    "production must not bind the development UDP fallback unless explicitly enabled",
+  );
 });
 
 test("integrated demo keeps Firebase Auth and physical-device HIL local and explicit", () => {

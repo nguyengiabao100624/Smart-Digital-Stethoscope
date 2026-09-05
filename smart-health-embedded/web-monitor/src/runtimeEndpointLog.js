@@ -27,11 +27,19 @@ function toWebSocketEndpoint(baseUrl, route) {
   return url.toString();
 }
 
+function resolveUdpAudioEnabled(env = {}, authMode = "") {
+  const configured = String(env.ENABLE_UDP_AUDIO || "").trim().toLowerCase();
+  if (configured === "true") return true;
+  if (configured === "false") return false;
+  return authMode !== "production" && env.NODE_ENV !== "production";
+}
+
 function buildRuntimeEndpointLogLines({
   production,
   publicBackendUrl,
   port,
   audioUdpPort,
+  udpAudioEnabled,
   localUrls = [],
 }) {
   if (production) {
@@ -40,7 +48,9 @@ function buildRuntimeEndpointLogLines({
       return [
         "Public endpoint: managed by the hosting provider",
         "Realtime device transport: authenticated WSS",
-        "UDP audio fallback: development-only and not advertised to production devices",
+        udpAudioEnabled
+          ? "UDP audio fallback: explicitly enabled for private compatibility"
+          : "UDP audio fallback: disabled; production devices use authenticated WSS",
       ];
     }
 
@@ -48,7 +58,9 @@ function buildRuntimeEndpointLogLines({
       `Public backend: ${publicBaseUrl}`,
       `App WebSocket: ${toWebSocketEndpoint(publicBaseUrl, "/app")}`,
       `ESP WebSocket: ${toWebSocketEndpoint(publicBaseUrl, "/esp")}`,
-      "UDP audio fallback: development-only and not advertised to production devices",
+      udpAudioEnabled
+        ? "UDP audio fallback: explicitly enabled for private compatibility"
+        : "UDP audio fallback: disabled; production devices use authenticated WSS",
     ];
   }
 
@@ -56,12 +68,15 @@ function buildRuntimeEndpointLogLines({
     ...localUrls.map((url) => `Open ${url}`),
     `App WebSocket: ws://<this-computer-ip>:${port}/app`,
     `ESP WebSocket firmware should connect to ws://<this-computer-ip>:${port}/esp`,
-    `UDP firmware should send PCM16 audio to <this-computer-ip>:${audioUdpPort}`,
+    udpAudioEnabled
+      ? `UDP firmware should send PCM16 audio to <this-computer-ip>:${audioUdpPort}`
+      : "UDP audio fallback: disabled",
   ];
 }
 
 module.exports = {
   buildRuntimeEndpointLogLines,
   normalizePublicHttpBaseUrl,
+  resolveUdpAudioEnabled,
   toWebSocketEndpoint,
 };

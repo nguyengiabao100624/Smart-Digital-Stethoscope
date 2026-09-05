@@ -5096,6 +5096,29 @@ $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
 
 `AIAssistantScreenTest` verifies attachment entry points, history controls and the voice invariant: Stop places the final transcript in the draft and does not send until the explicit Send action. The production AI provider remains disabled until a provider/model and secret are approved; do not place keys in source, Gradle properties, ADB arguments or test output.
 
+## 2026-09-05 migration 060 and records-screen verification
+
+Verify the owner-safe migration and Android records surface without exposing secrets:
+
+```powershell
+Set-Location 'D:\Study\KLTN\smart-health-embedded\web-monitor'
+npm run smoke:identity-migrations
+npm run check
+npm run smoke:public-deployment
+npm run smoke:release-security
+
+Set-Location 'D:\Study\KLTN\smart-health-android'
+.\gradlew.bat :app:testDebugUnitTest `
+  --tests 'com.example.smart_health_android.ui.DoctorDashboardRecordsArchitectureTest' `
+  --tests 'com.example.smart_health_android.records.MedicalRecordsViewModelTest' `
+  :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug `
+  --no-daemon --console=plain
+```
+
+The production authority is Render deploy `dep-dadtdhvavr4c73an61hg`, release `git-6e203301e599`; Supabase app migration `060_pin_trigger_function_search_paths` is recorded. If Render connects through a non-owner pooler role, migration 060 succeeds only when the Supabase owner has already pinned all four exact functions; it raises instead of silently accepting an unsafe state. See the [Supabase mutable search-path remediation](https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable).
+
+On Xiaomi, install the normal and test APKs, run `com.example.smart_health_android.ui.screens.MedicalRecordsScreenTest`, then uninstall `com.example.smart_health_android.test` and relaunch `MainActivity`. Do not use ADB to force TalkBack: MIUI denies secure-setting writes without `WRITE_SECURE_SETTINGS`. Treat real spoken focus traversal as a manual boundary and preserve the prior setting. Bounded COM9 serial inspection may read RMS/peak/WSS counters only; never print Wi-Fi credentials, tokens, device secrets or signing keys.
+
 ## 2026-09-05 guided-scan and records verification
 
 ```powershell

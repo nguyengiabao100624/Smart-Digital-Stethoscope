@@ -1,6 +1,17 @@
 # Smart Health - Production Backlog
 
-Last updated: 2026-09-04
+Last updated: 2026-09-05
+
+## 2026-09-05 trigger hardening and current physical gates
+
+- [x] Apply migration `060_pin_trigger_function_search_paths` through the Supabase owner path and make the application/Render Session-Pooler replay verify-and-skip only an already hardened exact state.
+- [x] Pass static migration `3/3`, identity-migration aggregate, backend check/repository/workspace/release-security regressions and live hostile-`search_path` trigger behavior with rollback cleanup.
+- [x] Clear all four Supabase mutable-function-`search_path` warnings; fresh Security Advisor output has `0` WARN/ERROR and `46` expected INFO-only deny-by-default rows.
+- [x] Deploy Render `dep-dadtdhvavr4c73an61hg`; verify release `git-6e203301e599`, public Admin/Portal/API smoke, anonymous denial and zero deploy-window error logs.
+- [x] Install Android APK `71774EA6...7A54CE`, pass focused records unit/build/lint plus Xiaomi medical-record share-picker Compose `1/1` at 200% font/dark theme, remove the test package and relaunch the normal App.
+- [ ] Perform the spoken TalkBack focus-order traversal on the phone. MIUI denies ADB `WRITE_SECURE_SETTINGS`; accessibility remains disabled and unchanged. Current source semantics/48dp physical Compose proof is not mislabeled as real TalkBack speech output.
+- [ ] Repair/reseat the second MSM261S4030H0 signal path. COM9 WSS is active and slot 0 is healthy, but slot 1 remains approximately RMS `70–110`; two-physical-microphone acceptance cannot pass until the hardware signal returns.
+- [ ] Configure an approved server-only AI provider and run a non-sensitive canary before any PHI. Signed OTA success plus intentional rollback still require the approved enrolled-device signing path. Overall G4 remains **PARTIAL** until these external/physical gates pass.
 
 ## 2026-09-04 fresh AI/audio closure checklist
 

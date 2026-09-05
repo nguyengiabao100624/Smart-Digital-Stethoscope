@@ -1,5 +1,14 @@
 # Shcare rebuild execution ledger
 
+## 2026-09-05 - Migration 060 and physical records follow-up
+
+| Plan row | State | Current proof / next action |
+| --- | --- | --- |
+| Supabase trigger hardening | Production PASS | Four mutable-`search_path` warnings are removed with invoker functions and qualified relations. Hostile-path dynamic trigger regression passes with rollback cleanup; fresh Advisor reports `0` WARN/ERROR and `46` INFO. |
+| Render promotion | Production PASS | Pooler-owner conflict and invalid `pg_catalog.coalesce` were reproduced and fixed. Deploy `dep-dadtdhvavr4c73an61hg` is live at `git-6e203301e599`; public smoke and release-security `5/5` pass with no deploy-window error log. |
+| Android records surface | Source/build/physical Compose PASS | Records unit/build/lint pass. APK `71774EA6...7A54CE` is installed; Xiaomi test `1/1` proves the share picker is compact by default and opens at 200% font/dark theme through a 48dp target. Real TalkBack speech remains blocked because MIUI denies ADB secure-setting control. |
+| Two-microphone acceptance | PHYSICAL BLOCKED | COM9 WSS counter advances and slot 0 is healthy, but slot 1 remains RMS `70–110`. Repair SEL/wiring/power/capsule/acoustic hardware before two-mic acceptance; do not flash the enrolled image or amplify noise blindly. |
+
 ## 2026-08-26 - G3 direct dual-band ESPTouch correction
 
 | Plan row | State | Current proof / next action |

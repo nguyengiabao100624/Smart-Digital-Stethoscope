@@ -1,6 +1,15 @@
 # Smart Health - New Chat Context
 
-Last updated: 2026-09-04
+Last updated: 2026-09-05
+
+## 2026-09-05 migration 060, Render release and medical-record UI proof
+
+- Supabase migration `060_pin_trigger_function_search_paths` pins the four trigger functions reported by the Security Advisor to an empty `search_path`, keeps `SECURITY INVOKER`, fully qualifies application relations and preserves all five trigger bindings. The production function owner applied the DDL; the Render Session-Pooler migration path now fails closed unless that exact hardened state already exists.
+- Production dynamic regression under a hostile session `search_path` passed append-only audit rejection, missing-actor rejection, non-doctor access rejection and doctor-demotion auto-revoke/audit behavior. The transaction was rolled back and all isolated fixture counts are zero. Fresh Supabase Security Advisor output at `2026-09-05T08:48:21.109Z` has `0` WARN/ERROR and `46` INFO-only deny-by-default rows.
+- Render deploys `dep-dads9767bikc73crq9d0` and `dep-dadsbh49v7es73al0c9g` exposed, respectively, an owner mismatch and an invalid `pg_catalog.coalesce` qualification. Both were fixed with regression coverage. Deploy `dep-dadtdhvavr4c73an61hg` is LIVE at backend marker `git-6e203301e599`; public deployment smoke and release-security `5/5` pass, and the deploy window has no error log.
+- The medical-record share target is physically verified on Xiaomi `21081111RG`: the new Compose test passes `1/1` in dark theme at 200% font, starts collapsed, expands on the explicit 48dp target and exposes its query only after expansion. Debug APK `71774EA6A6A22DA9F9B3D5A948E08AC1F1DA58E3624552CA29557E69F87A54CE` is installed; the test package was removed and normal `MainActivity` is foreground with no fatal/DNS/TLS log.
+- TalkBack is installed but disabled. MIUI rejects ADB secure-setting writes without `WRITE_SECURE_SETTINGS`, so a true spoken-focus traversal remains a manual device boundary; the failed attempt left accessibility state unchanged. Do not claim TalkBack PASS from Compose semantics alone.
+- Fresh bounded COM9 telemetry shows WSS frames still advancing and healthy slot 0 (`RMS 26,983–46,211` in the captured sample), while slot 1 remains near silence (`RMS 70–110`). This isolates the remaining second-microphone acceptance gap to SEL/wiring/power/capsule/acoustic hardware; do not flash the enrolled board or amplify this noise blindly.
 
 ## 2026-09-04 fresh Xiaomi, COM9, audio and AI verification
 

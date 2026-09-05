@@ -23,7 +23,7 @@ BEGIN
     ),
     pg_catalog.bool_and(
       'search_path=""' = ANY(
-        pg_catalog.coalesce(procedure.proconfig, ARRAY[]::text[])
+        COALESCE(procedure.proconfig, ARRAY[]::text[])
       )
     )
   INTO

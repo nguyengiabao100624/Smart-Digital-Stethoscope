@@ -58,6 +58,7 @@ test("migration safely handles Supabase-owned functions without accepting an uns
   assert.match(executableSql, /expected_function_count\s*<>\s*4/i);
   assert.match(executableSql, /IF\s+all_functions_are_hardened\s+THEN/i);
   assert.match(executableSql, /RETURN\s*;/i);
+  assert.doesNotMatch(executableSql, /pg_catalog\.coalesce/i);
   assert.match(
     executableSql,
     /trigger function hardening requires the owning database role/i,

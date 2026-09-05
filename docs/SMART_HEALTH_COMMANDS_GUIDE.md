@@ -5112,3 +5112,22 @@ Set-Location 'D:\Study\KLTN\smart-health-android'
 ```
 
 `AUDIO_RECORDING_MAX_DURATION_MS` may override the backend safety lease and is clamped to 30 seconds through 15 minutes; the default is five minutes. Medical records refresh only on initial load, explicit toolbar refresh, retry or pull-to-refresh—never by a perpetual timer. Production acceptance still requires a real authenticated device ACK, multi-second audio, explicit stop, durable completed scan and playback; source tests do not replace that HIL.
+
+### Explicit physical guided-measurement HIL
+
+Build and install the test APK, then run the opt-in test only on the authorized physical phone with an already authenticated Firebase session:
+
+```powershell
+Set-Location 'D:\Study\KLTN\smart-health-android'
+.\gradlew.bat :app:assembleDebugAndroidTest --no-daemon --console=plain
+$adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+& $adb install -r -t app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
+& $adb shell am instrument -w -r `
+  -e shcareGuidedMeasurementHil true `
+  -e class com.example.smart_health_android.scan.GuidedMeasurementProductionHilTest `
+  com.example.smart_health_android.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+The test selects only a backend-confirmed online device, reuses one idempotency key for ambiguous transport reconciliation, records for eight seconds, explicitly stops, waits for a durable `completed` scan of at least five seconds, verifies sample-count coherence, requests the waveform and downloads a non-empty WAV. It accepts no password, bearer, patient ID or device ID through instrumentation arguments. If a one-use Firebase custom token is required to restore the authorized test session, place it only in app-private storage and delete it before exchange; never pass or print it through ADB arguments, source, shell history or logs.
+
+For the 2026-09-05 production proof, Render release `cdf08214c83d` produced `scan_20260905035023_04e2906f`: `8.392 s`, `134272 @ 16 kHz`, 128 waveform points and a 268588-byte WAV. Four exact interrupted reproduction records were deleted after the PASS. COM9 still requires a separate two-slot hardware check because slot 1 is near silence; do not solve that by blindly amplifying noise or flashing a generic image over the enrolled credential.

@@ -2924,6 +2924,8 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - [x] Add a bounded backend recording lease so app process death cannot leave an unlimited WSS audio stream.
 - [x] Remove automatic five-second records polling and ship collapsed share-target selection plus pull-to-refresh for doctor and patient.
 - [x] Pass backend `89/89` device/OTA/security, Android focused unit/UI, assemble/lint and firmware source/production build gates; install the current debug APK on Xiaomi.
-- [ ] Deploy the candidate backend and prove production start ACK, more than one second of audio, explicit stop, durable completed scan and playback.
-- [ ] Diagnose/repair physical mic slot 1 before claiming two-microphone acceptance; current bounded COM9 evidence shows slot 0 active and slot 1 near silence.
-- [ ] Wake/unlock Xiaomi for the final visual/TalkBack and guided-scan production HIL; MIUI currently blocks ADB input injection while asleep.
+- [x] Deploy command/scan timestamp normalization through Render release `cdf08214c83d`; public smoke and post-deploy error-log checks pass.
+- [x] Prove production start ACK, audio-v2, explicit stop, durable completed scan, waveform and authenticated playback/download with `scan_20260905035023_04e2906f` (`8.392 s`, `134272 @ 16 kHz`, 128 waveform points, 268588-byte WAV).
+- [x] Remove only the four exact interrupted attempts generated while reproducing the two SQL timestamp defects; retain the completed HIL record as evidence.
+- [ ] Diagnose/repair physical mic slot 1 before claiming two-microphone acceptance; current bounded COM9 evidence shows slot 0 active and slot 1 mostly RMS `31-190`.
+- [ ] Run the final records-screen visual/TalkBack traversal when MIUI permits instrumentation input. The guided-scan production HIL is complete and is no longer part of this visual-only blocker.

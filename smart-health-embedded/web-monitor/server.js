@@ -106,6 +106,7 @@ const { attachActor, createRequestContext, getRequestContext } = require("./src/
 const { createMqttControlPlane } = require("./src/mqttControlPlane");
 const { buildProductionReadiness } = require("./src/productionReadiness");
 const { assertRuntimeSecurity, resolveAuthMode } = require("./src/runtimeSecurity");
+const { buildRuntimeEndpointLogLines } = require("./src/runtimeEndpointLog");
 const { postOutboundWebhook } = require("./src/outboundWebhookSecurity");
 const { buildPushNotificationPayload } = require("./src/notificationPushPayload");
 const {
@@ -26982,12 +26983,17 @@ function startNetworkServers() {
     console.log(`Smart Health backend listening on port ${PORT}`);
     console.log(`Data backend: ${DATA_BACKEND}`);
     console.log(`Auth mode: ${AUTH_MODE}; Firebase auth: ${FIREBASE_AUTH_ENABLED ? "enabled" : "disabled"}`);
-    for (const url of getLocalUrls()) {
-      console.log(`Open ${url}`);
+    const production = AUTH_MODE === "production" || process.env.NODE_ENV === "production";
+    const endpointLines = buildRuntimeEndpointLogLines({
+      production,
+      publicBackendUrl: process.env.PUBLIC_BACKEND_URL || process.env.SMART_HEALTH_PUBLIC_URL,
+      port: PORT,
+      audioUdpPort: AUDIO_UDP_PORT,
+      localUrls: production ? [] : getLocalUrls(),
+    });
+    for (const line of endpointLines) {
+      console.log(line);
     }
-    console.log(`App WebSocket: ws://<this-computer-ip>:${PORT}/app`);
-    console.log(`ESP WebSocket firmware should connect to ws://<this-computer-ip>:${PORT}/esp`);
-    console.log(`UDP firmware should send PCM16 audio to <this-computer-ip>:${AUDIO_UDP_PORT}`);
   });
 
   audioUdp.bind(AUDIO_UDP_PORT, HOST, () => {

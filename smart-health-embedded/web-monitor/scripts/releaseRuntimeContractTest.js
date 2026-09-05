@@ -45,6 +45,11 @@ test("production container uses the migration-aware canonical start command", ()
     /sync-seed-database/,
     "the production API must not expose a route that imports demo fixtures",
   );
+  assert.match(
+    serverSource,
+    /buildRuntimeEndpointLogLines\(\{[\s\S]*?production,[\s\S]*?publicBackendUrl:/,
+    "startup logging must distinguish production endpoints from local HIL guidance",
+  );
 });
 
 test("integrated demo keeps Firebase Auth and physical-device HIL local and explicit", () => {

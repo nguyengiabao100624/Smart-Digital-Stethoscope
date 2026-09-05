@@ -76,7 +76,7 @@
     "smoke:release-identity": "node --test scripts/releaseIdentityTest.js",
     "smoke:release-runtime": "node --test scripts/releaseRuntimeContractTest.js",
     "smoke:release-security": "node --test scripts/releaseSecurityGateTest.js",
-    "smoke:identity-migrations": "node scripts/identityMigrationSmokeTest.js",
+    "smoke:identity-migrations": "node scripts/identityMigrationSmokeTest.js && node --test scripts/functionSearchPathMigrationTest.js",
     "worker": "node scripts/worker.js",
     "seed": "node scripts/seed.js",
     "firebase:claims": "node scripts/setFirebaseClaims.js",

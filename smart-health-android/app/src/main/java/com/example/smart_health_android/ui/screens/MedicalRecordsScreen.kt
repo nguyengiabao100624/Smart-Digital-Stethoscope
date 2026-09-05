@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -277,7 +278,7 @@ fun MedicalRecordsScreen(
 }
 
 @Composable
-private fun ShareTargetPicker(
+internal fun ShareTargetPicker(
     query: String,
     onQueryChange: (String) -> Unit,
     targets: ShareTargets,
@@ -298,6 +299,7 @@ private fun ShareTargetPicker(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .testTag("medical_records.share_target")
             .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
             .padding(14.dp),
@@ -307,6 +309,7 @@ private fun ShareTargetPicker(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 48.dp)
+                .testTag("medical_records.share_target.toggle")
                 .clickable { expanded = !expanded },
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
@@ -348,7 +351,9 @@ private fun ShareTargetPicker(
                 onValueChange = onQueryChange,
                 placeholder = { Text("Tìm bác sĩ hoặc cơ sở nhận chia sẻ") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("medical_records.share_target.query"),
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(

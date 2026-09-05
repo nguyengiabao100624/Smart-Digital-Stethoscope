@@ -2,6 +2,14 @@
 
 Last updated: 2026-09-05
 
+## 2026-09-05 production network telemetry and WSS-only runtime closure
+
+- Backend authentication now accepts only bounded, syntactically valid `wifiSsid`, `wifiRssi` and `ipAddress` telemetry, persists it in PostgreSQL JSONB, rehydrates the same top-level fields after reload and projects one sanitized representation to Admin/Android. Firmware reports the currently associated SSID/local IP instead of a stale saved candidate.
+- Focused device security is `90/90`; repository, release-runtime `6/6`, release-security `5/5`, KLT contract, aggregate backend and full backend syntax gates pass. ESP32-S3 production and OTA targets compile; the OTA artifact SHA-256 is `90456BEEE86E2F155A3C6C6303C4C20BF2D0F91008A05D6AFB17B4EFE47AD26F`. It was not uploaded over the enrolled board.
+- Render deploy `dep-dadu35ss728c73fhrns0` is LIVE on exact commit `61971072530b89b408424e64d09b7d0f206b128f`. Health returns marker `git-61971072530b`; startup logs publish only the canonical HTTPS backend and authenticated WSS App/ESP endpoints. The development UDP fallback is disabled by default in production and no UDP socket/listening line appears.
+- Fresh authenticated production API proof returns the enrolled device online with non-empty Wi-Fi/IP, valid RSSI and exact top-level/nested telemetry parity. Fresh Supabase state also contains current WSS presence and network telemetry. Admin already renders these canonical fields, so the earlier “Online” plus “Chưa báo cáo WiFi/Chưa có IP” inconsistency is closed after refresh.
+- Xiaomi `21081111RG` is attached and awake, while accessibility remains disabled (`enabled_accessibility_services=null`, `accessibility_enabled=0`). COM9 is present as CH343. Remaining physical/provider gates are unchanged: spoken TalkBack traversal, repair of the near-silent second microphone path, approved enrolled-device signed OTA/forced rollback, and an approved server-only AI-provider canary. Overall G4 remains **PARTIAL** until those gates have real evidence.
+
 ## 2026-09-05 migration 060, Render release and medical-record UI proof
 
 - Supabase migration `060_pin_trigger_function_search_paths` pins the four trigger functions reported by the Security Advisor to an empty `search_path`, keeps `SECURITY INVOKER`, fully qualifies application relations and preserves all five trigger bindings. The production function owner applied the DDL; the Render Session-Pooler migration path now fails closed unless that exact hardened state already exists.

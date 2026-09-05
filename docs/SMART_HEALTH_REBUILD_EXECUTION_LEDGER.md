@@ -1,5 +1,14 @@
 # Shcare rebuild execution ledger
 
+## 2026-09-05 - Production telemetry and WSS-only runtime
+
+| Plan row | State | Current proof / next action |
+| --- | --- | --- |
+| ESP network telemetry | Production PASS | Strictly sanitized Wi-Fi/IP/RSSI now survives PostgreSQL reload and keeps top-level API fields identical to nested telemetry. Firmware reports the live association. Device security `90/90`, repository and firmware contracts/builds pass. |
+| Render transport runtime | Production PASS | Deploy `dep-dadu35ss728c73fhrns0` is live at `git-61971072530b`. Production logs expose canonical HTTPS/WSS only; UDP fallback is disabled and not bound. Release-runtime `6/6`, release-security `5/5`, KLT contract and aggregate backend pass. |
+| Live device projection | Authenticated production PASS | The enrolled device is online over WSS; Supabase and authenticated API both have current Wi-Fi/IP/RSSI, with exact top-level/nested parity. This closes Admin's previous online-but-missing-network display inconsistency. |
+| Physical/accessibility/provider closure | PARTIAL | Xiaomi is attached/awake and COM9 is present. Spoken TalkBack is still disabled by MIUI policy; mic slot 1 is near silence; approved signed OTA/forced rollback and external AI provider canary remain required. |
+
 ## 2026-09-05 - Migration 060 and physical records follow-up
 
 | Plan row | State | Current proof / next action |

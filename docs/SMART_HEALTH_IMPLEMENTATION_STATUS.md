@@ -1,6 +1,13 @@
 # Smart Health - Implementation Status
 
-Last updated: 2026-09-04
+Last updated: 2026-09-05
+
+## 2026-09-05 production network telemetry and transport status
+
+- **PASS/LIVE — data parity:** authenticated WSS telemetry now carries only validated Wi-Fi SSID/RSSI/IP values, persists through PostgreSQL reload and reaches Admin/Android with identical top-level and nested fields. Firmware reports the active association rather than stale saved values. The enrolled production device is online and the former missing Wi-Fi/IP display is closed.
+- **PASS/LIVE — runtime:** Render deploy `dep-dadu35ss728c73fhrns0` runs exact commit `61971072530b89b408424e64d09b7d0f206b128f`; health marker is `git-61971072530b`. Production startup publishes HTTPS/WSS endpoints only and no longer binds the development UDP fallback by default.
+- **PASS/REGRESSION:** device security `90/90`, repositories, release-runtime `6/6`, release-security `5/5`, KLT contract, aggregate backend, full syntax, firmware source contracts and production/OTA builds pass. The new OTA artifact was built and hashed but deliberately not flashed over the enrolled image.
+- **PARTIAL/G3–G4:** Xiaomi is awake and COM9 is present, but true TalkBack speech remains disabled, the second microphone path remains near silent, signed OTA/forced rollback needs the approved enrolled signing path, and external AI needs an approved server-only provider plus non-sensitive canary. These cannot be labeled PASS from source/build evidence.
 
 ## 2026-09-04 full AI/recording regression and hardware truth
 

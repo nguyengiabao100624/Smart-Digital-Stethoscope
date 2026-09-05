@@ -2,6 +2,16 @@
 
 Last updated: 2026-09-05
 
+## 2026-09-05 network telemetry and production transport closure
+
+- [x] Preserve authenticated ESP network telemetry end-to-end: strict allowlist/redaction, PostgreSQL JSONB persistence, reload parity, API top-level/nested parity and Admin-compatible Wi-Fi/IP/RSSI fields.
+- [x] Report the currently associated firmware SSID/local IP instead of a stale saved candidate; pass device security `90/90`, repositories, firmware source contracts and production/OTA builds.
+- [x] Deploy exact commits `bf87ebd9` and `61971072`; verify Render deploy `dep-dadu35ss728c73fhrns0`, health marker `git-61971072530b`, authenticated online device telemetry and migration startup `001–060`.
+- [x] Remove misleading local `http://`/`ws://`/UDP guidance from production logs and disable the development UDP audio socket by default in production. Release-runtime `6/6`, release-security `5/5`, KLT contract, aggregate backend and full syntax checks pass.
+- [ ] Complete a spoken TalkBack traversal on the awake Xiaomi. ADB confirms accessibility is disabled and MIUI does not grant shell `WRITE_SECURE_SETTINGS`; source semantics and Compose tests are not a substitute.
+- [ ] Repair the second physical MSM261S4030H0 signal path, then rerun two-source heart/lung listening and durable scan evidence. Slot 0 is healthy; slot 1 remains near silence.
+- [ ] Run approved enrolled-device signed OTA success plus forced rollback, and configure an approved server-only AI provider for a non-sensitive canary. Do not invent keys, flash a generic artifact or send PHI before provider approval.
+
 ## 2026-09-05 trigger hardening and current physical gates
 
 - [x] Apply migration `060_pin_trigger_function_search_paths` through the Supabase owner path and make the application/Render Session-Pooler replay verify-and-skip only an already hardened exact state.

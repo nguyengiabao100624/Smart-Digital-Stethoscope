@@ -198,7 +198,7 @@ fun AIAssistantScreen(
         }
     }
 
-    val inputEnabled = state.availability.available && state.loadState !in setOf(AiChatLoadState.Loading, AiChatLoadState.Error)
+    val composerVisible = state.loadState !in setOf(AiChatLoadState.Loading, AiChatLoadState.Error)
     Scaffold(
         topBar = {
             ShcareGradientTopAppBar(
@@ -219,9 +219,10 @@ fun AIAssistantScreen(
             )
         },
         bottomBar = {
-            if (inputEnabled) {
+            if (composerVisible) {
                 AiChatComposer(
                     state = state,
+                    canSend = state.availability.available,
                     isRecording = isRecording,
                     voiceStatus = voiceStatus,
                     amplitudes = amplitudes,
@@ -243,15 +244,55 @@ fun AIAssistantScreen(
                 AiChatLoadState.Error -> AiChatLoadError(state.requestId) { viewModel.onAction(AiChatUiAction.Retry) }
                 AiChatLoadState.Empty -> AiChatEmptyContent()
                 AiChatLoadState.Unavailable -> if (state.messages.isEmpty()) {
-                    ShcareEmptyState(
-                        title = stringResource(R.string.ai_assistant_unavailable_title),
-                        message = stringResource(R.string.ai_assistant_unavailable_message),
-                        actionLabel = stringResource(R.string.shcare_action_retry),
-                        onAction = { viewModel.onAction(AiChatUiAction.Retry) },
-                        modifier = Modifier.fillMaxSize().testTag("ai_assistant.unavailable"),
-                    )
+                    AiChatProviderUnavailableContent()
                 } else AiChatTimeline(state.messages, state.attachments, providerUnavailable = true)
                 AiChatLoadState.Ready -> AiChatTimeline(state.messages, state.attachments, providerUnavailable = false)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiChatProviderUnavailableContent() {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item { AiProviderUnavailableNotice() }
+        item { AiDisclaimerCard() }
+    }
+}
+
+@Composable
+private fun AiProviderUnavailableNotice() {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = ShcareTheme.colors.warningContainer,
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("ai_assistant.provider_notice"),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = stringResource(R.string.ai_assistant_unavailable_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = stringResource(R.string.ai_assistant_unavailable_message),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
         }
     }
@@ -366,9 +407,7 @@ private fun AiChatTimeline(
     ) {
         item(key = "disclaimer") { AiDisclaimerCard() }
         if (providerUnavailable) item(key = "provider-unavailable") {
-            Card(colors = CardDefaults.cardColors(containerColor = ShcareTheme.colors.warningContainer)) {
-                Text(stringResource(R.string.ai_assistant_unavailable_message), Modifier.padding(16.dp))
-            }
+            AiProviderUnavailableNotice()
         }
         items(messages, key = { it.id }) { message ->
             AiMessageBubble(message, attachments.filter { it.messageId == message.id })
@@ -436,6 +475,7 @@ private fun AiMessageBubble(message: AiChatMessage, attachments: List<AiChatAtta
 @Composable
 private fun AiChatComposer(
     state: AiChatUiState,
+    canSend: Boolean,
     isRecording: Boolean,
     voiceStatus: String,
     amplitudes: List<Int>,
@@ -477,6 +517,13 @@ private fun AiChatComposer(
                 maxLines = 5,
                 modifier = Modifier.fillMaxWidth().testTag("ai_assistant.input"),
             )
+            if (!canSend) {
+                Text(
+                    text = stringResource(R.string.ai_assistant_provider_send_disabled),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(
                     onClick = onAttach,
@@ -496,12 +543,12 @@ private fun AiChatComposer(
                 Spacer(Modifier.weight(1f))
                 Surface(
                     shape = CircleShape,
-                    color = if (state.input.isNotBlank() && !state.isSending) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                    color = if (canSend && state.input.isNotBlank() && !state.isSending) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                     modifier = Modifier.defaultMinSize(48.dp, 48.dp),
                 ) {
                     IconButton(
                         onClick = { onAction(AiChatUiAction.Send) },
-                        enabled = state.input.isNotBlank() && !state.isSending && !state.isUploading,
+                        enabled = canSend && state.input.isNotBlank() && !state.isSending && !state.isUploading,
                         modifier = Modifier.testTag("ai_assistant.send"),
                     ) {
                         if (state.isSending) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)

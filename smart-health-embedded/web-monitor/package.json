@@ -56,6 +56,7 @@
     "smoke:two-factor": "node --test scripts/twoFactorEnrollmentStartRepositoryTest.js scripts/twoFactorPendingActivationRepositoryTest.js scripts/twoFactorRecoveryDeliveryTest.js scripts/twoFactorSmokeTest.js",
     "smoke:audio-protocol": "node --test scripts/audioProtocolV2SmokeTest.js",
     "smoke:audio-processing-worker": "node --test scripts/audioProcessingWorkerTest.js",
+    "smoke:audio-waveform": "node --test scripts/audioProcessingWaveformTest.js",
     "smoke:clinical-workflow": "node --test scripts/clinicalWorkflowRepositoryTest.js",
     "smoke:clinical-dashboard-status": "node --test scripts/clinicalDashboardStatusContractTest.js",
     "smoke:patient-dashboard": "node --test scripts/patientDashboardContractTest.js",

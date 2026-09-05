@@ -3158,8 +3158,14 @@ function parseScanWaveformArtifact(buffer, scan) {
   }
   const scanId = readString(raw?.scanId, 120);
   const sampleRate = Number(raw?.sampleRate);
+  const representation = readString(raw?.representation, 80) || "magnitude_envelope_v1";
   const points = Array.isArray(raw?.points) ? raw.points : [];
   const generatedAt = readString(raw?.generatedAt, 80);
+  const supportedRepresentation = ["magnitude_envelope_v1", "signed_peak_v1"].includes(representation);
+  const pointsAreValid = points.every((point) =>
+    Number.isFinite(point) &&
+    (representation === "signed_peak_v1" ? point >= -1 && point <= 1 : point >= 0 && point <= 1),
+  );
   if (
     !scanId ||
     scanId !== scan.id ||
@@ -3168,7 +3174,8 @@ function parseScanWaveformArtifact(buffer, scan) {
     sampleRate > 192000 ||
     points.length < 1 ||
     points.length > MAX_SCAN_WAVEFORM_POINTS ||
-    points.some((point) => !Number.isFinite(point) || point < 0 || point > 1) ||
+    !supportedRepresentation ||
+    !pointsAreValid ||
     !generatedAt ||
     !Number.isFinite(Date.parse(generatedAt))
   ) {
@@ -3181,6 +3188,7 @@ function parseScanWaveformArtifact(buffer, scan) {
   return {
     scanId,
     sampleRate,
+    representation,
     points: points.map((point) => Number(point)),
     generatedAt: new Date(generatedAt).toISOString(),
   };

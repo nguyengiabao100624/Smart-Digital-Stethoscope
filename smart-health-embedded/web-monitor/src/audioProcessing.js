@@ -12,7 +12,7 @@ function readPcmSamplesFromWav(filePath) {
   return samples;
 }
 
-function buildWaveform(samples, targetPoints = 128) {
+function buildWaveform(samples, targetPoints = 512) {
   if (!samples.length) {
     return [];
   }
@@ -20,8 +20,11 @@ function buildWaveform(samples, targetPoints = 128) {
   const points = [];
   for (let i = 0; i < samples.length; i += bucketSize) {
     const chunk = samples.slice(i, i + bucketSize);
-    const peak = chunk.reduce((max, sample) => Math.max(max, Math.abs(sample)), 0);
-    points.push(Number((peak / 32768).toFixed(4)));
+    const signedPeak = chunk.reduce(
+      (selected, sample) => Math.abs(sample) > Math.abs(selected) ? sample : selected,
+      0,
+    );
+    points.push(Number((signedPeak / 32768).toFixed(4)));
   }
   return points.slice(0, targetPoints);
 }
@@ -72,6 +75,7 @@ async function processAudioFile(input) {
   const waveform = {
     scanId: input.scanId,
     sampleRate: input.sampleRate || 16000,
+    representation: "signed_peak_v1",
     points: buildWaveform(samples),
     generatedAt: new Date().toISOString(),
   };
@@ -83,5 +87,6 @@ async function processAudioFile(input) {
 }
 
 module.exports = {
+  buildWaveform,
   processAudioFile,
 };

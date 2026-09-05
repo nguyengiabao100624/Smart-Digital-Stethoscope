@@ -68,8 +68,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -721,7 +724,13 @@ private fun RecordWaveformAndAudioCard(
             verticalArrangement = Arrangement.spacedBy(spacing.large),
         ) {
             Text(
-                text = stringResource(R.string.record_detail_waveform_title),
+                text = stringResource(
+                    if (scan.isHeart) {
+                        R.string.record_detail_heart_waveform_title
+                    } else {
+                        R.string.record_detail_lung_waveform_title
+                    },
+                ),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.semantics { heading() },
@@ -834,6 +843,7 @@ private fun RecordWaveform(
                 .fillMaxWidth()
                 .height(160.dp)
                 .padding(ShcareTheme.spacing.medium)
+                .testTag("record_detail.biomedical_waveform")
                 .clearAndSetSemantics {
                     contentDescription = description
                 },
@@ -845,16 +855,38 @@ private fun RecordWaveform(
                 end = Offset(size.width, centerY),
                 strokeWidth = 2f,
             )
-            val denominator = (waveform.points.size - 1).coerceAtLeast(1)
-            waveform.points.forEachIndexed { index, point ->
-                val x = size.width * index.toFloat() / denominator.toFloat()
-                val amplitude = point.coerceIn(0f, 1f) * size.height * 0.44f
-                drawLine(
+            if (waveform.representation == "signed_peak_v1") {
+                drawPath(
+                    path = recordWaveformSignedPath(
+                        points = waveform.points,
+                        width = size.width,
+                        height = size.height,
+                    ),
                     color = waveformColor,
-                    start = Offset(x, centerY - amplitude),
-                    end = Offset(x, centerY + amplitude),
-                    strokeWidth = 3f,
-                    cap = StrokeCap.Round,
+                    style = Stroke(
+                        width = 2.5.dp.toPx(),
+                        cap = StrokeCap.Round,
+                    ),
+                )
+            } else {
+                val envelope = recordWaveformEnvelopePath(
+                    points = waveform.points,
+                    width = size.width,
+                    height = size.height,
+                )
+                drawPath(
+                    path = envelope.area,
+                    color = waveformColor.copy(alpha = 0.14f),
+                )
+                drawPath(
+                    path = envelope.upper,
+                    color = waveformColor,
+                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
+                )
+                drawPath(
+                    path = envelope.lower,
+                    color = waveformColor,
+                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
                 )
             }
             if (playbackState.durationMillis > 0) {
@@ -868,6 +900,66 @@ private fun RecordWaveform(
             }
         }
     }
+}
+
+private data class RecordWaveformEnvelopePaths(
+    val area: Path,
+    val upper: Path,
+    val lower: Path,
+)
+
+private fun recordWaveformSignedPath(
+    points: List<Float>,
+    width: Float,
+    height: Float,
+): Path {
+    val path = Path()
+    val centerY = height / 2f
+    val denominator = (points.size - 1).coerceAtLeast(1)
+    points.forEachIndexed { index, point ->
+        val x = width * index.toFloat() / denominator.toFloat()
+        val y = centerY - point.coerceIn(-1f, 1f) * height * 0.44f
+        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    }
+    return path
+}
+
+private fun recordWaveformEnvelopePath(
+    points: List<Float>,
+    width: Float,
+    height: Float,
+): RecordWaveformEnvelopePaths {
+    val centerY = height / 2f
+    val denominator = (points.size - 1).coerceAtLeast(1)
+    val upper = Path()
+    val lower = Path()
+    val area = Path()
+
+    points.forEachIndexed { index, point ->
+        val x = width * index.toFloat() / denominator.toFloat()
+        val amplitude = point.coerceIn(0f, 1f) * height * 0.44f
+        val y = centerY - amplitude
+        if (index == 0) {
+            upper.moveTo(x, y)
+            area.moveTo(x, y)
+        } else {
+            upper.lineTo(x, y)
+            area.lineTo(x, y)
+        }
+    }
+    points.indices.reversed().forEach { index ->
+        val x = width * index.toFloat() / denominator.toFloat()
+        val amplitude = points[index].coerceIn(0f, 1f) * height * 0.44f
+        area.lineTo(x, centerY + amplitude)
+    }
+    area.close()
+    points.forEachIndexed { index, point ->
+        val x = width * index.toFloat() / denominator.toFloat()
+        val amplitude = point.coerceIn(0f, 1f) * height * 0.44f
+        val y = centerY + amplitude
+        if (index == 0) lower.moveTo(x, y) else lower.lineTo(x, y)
+    }
+    return RecordWaveformEnvelopePaths(area = area, upper = upper, lower = lower)
 }
 
 @Composable

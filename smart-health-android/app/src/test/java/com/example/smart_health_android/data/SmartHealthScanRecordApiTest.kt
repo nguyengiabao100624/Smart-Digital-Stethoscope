@@ -45,7 +45,8 @@ class SmartHealthScanRecordApiTest {
                       "waveform": {
                         "scanId": "scan_1",
                         "sampleRate": 16000,
-                        "points": [0.0, 0.25, 0.75, 1.0],
+                        "representation": "signed_peak_v1",
+                        "points": [0.0, 0.25, -0.75, 1.0],
                         "generatedAt": "2026-07-27T00:00:00.000Z"
                       }
                     }
@@ -60,7 +61,31 @@ class SmartHealthScanRecordApiTest {
         assertEquals("Bearer record-token", request.getHeader("Authorization"))
         assertEquals("scan_1", waveform.scanId)
         assertEquals(16000, waveform.sampleRate)
-        assertEquals(listOf(0f, 0.25f, 0.75f, 1f), waveform.points)
+        assertEquals("signed_peak_v1", waveform.representation)
+        assertEquals(listOf(0f, 0.25f, -0.75f, 1f), waveform.points)
+    }
+
+    @Test
+    fun `legacy magnitude envelope remains readable without inventing signed polarity`() = runBlocking {
+        server.enqueue(
+            jsonResponse(
+                """
+                    {
+                      "waveform": {
+                        "scanId": "scan_legacy",
+                        "sampleRate": 16000,
+                        "points": [0.0, 0.3, 0.8, 0.2],
+                        "generatedAt": "2026-07-27T00:00:00.000Z"
+                      }
+                    }
+                """,
+            ),
+        )
+
+        val waveform = api.getScanWaveform("scan_legacy")
+
+        assertEquals("magnitude_envelope_v1", waveform.representation)
+        assertEquals(listOf(0f, 0.3f, 0.8f, 0.2f), waveform.points)
     }
 
     @Test

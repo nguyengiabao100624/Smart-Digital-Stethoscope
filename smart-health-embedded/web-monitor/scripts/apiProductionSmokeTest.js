@@ -190,12 +190,13 @@ async function main() {
     const waveformPayload = await waveformResponse.json();
     assert.equal(waveformPayload.waveform.scanId, created.scan.id);
     assert.equal(waveformPayload.waveform.sampleRate, 16000);
+    assert.equal(waveformPayload.waveform.representation, "signed_peak_v1");
     assert.ok(Array.isArray(waveformPayload.waveform.points));
     assert.ok(waveformPayload.waveform.points.length > 0);
-    assert.ok(waveformPayload.waveform.points.length <= 256);
+    assert.ok(waveformPayload.waveform.points.length <= 512);
     assert.equal(
       waveformPayload.waveform.points.every(
-        (point) => Number.isFinite(point) && point >= 0 && point <= 1,
+        (point) => Number.isFinite(point) && point >= -1 && point <= 1,
       ),
       true,
     );

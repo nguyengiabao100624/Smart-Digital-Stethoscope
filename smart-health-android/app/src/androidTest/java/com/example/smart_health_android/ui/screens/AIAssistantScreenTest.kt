@@ -79,6 +79,26 @@ class AIAssistantScreenTest {
     }
 
     @Test
+    fun providerNotConfiguredKeepsChatDraftAndVoiceToolsAvailable() {
+        val viewModel = AiChatViewModel(UnavailableRepository)
+
+        composeRule.setContent {
+            ShcareMobileTheme(mode = ShcareThemeMode.System, useDynamicColor = false) {
+                AIAssistantScreen(onNavigateBack = {}, viewModel = viewModel)
+            }
+        }
+
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            viewModel.uiState.value.loadState.name == "Unavailable"
+        }
+        composeRule.onNodeWithTag("ai_assistant.provider_notice").assertIsDisplayed()
+        composeRule.onNodeWithTag("ai_assistant.composer").assertIsDisplayed()
+        composeRule.onNodeWithTag("ai_assistant.input").assertIsDisplayed()
+        composeRule.onNodeWithTag("ai_assistant.voice", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("ai_assistant.send", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test
     fun historyArchivesOnlyAfterExplicitConfirmation() {
         val repository = HistoryRepository()
         val viewModel = AiChatViewModel(repository)
@@ -177,6 +197,18 @@ class AIAssistantScreenTest {
             contentType = attachment.contentType,
             byteSize = attachment.bytes.size.toLong(),
         )
+    }
+
+    private object UnavailableRepository : AiChatRepository by EmptyAvailableRepository {
+        override suspend fun listConversations(): AiConversationList =
+            AiConversationList(
+                conversations = emptyList(),
+                availability = AiChatAvailability(
+                    available = false,
+                    provider = "openai_compatible",
+                    reason = "not_configured",
+                ),
+            )
     }
 
     private class HistoryRepository : AiChatRepository {

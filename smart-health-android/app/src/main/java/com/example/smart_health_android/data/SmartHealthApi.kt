@@ -5330,6 +5330,10 @@ class SmartHealthApi(
         val scanId = json.optString("scanId")
         val sampleRate = json.optInt("sampleRate")
         val generatedAt = json.optString("generatedAt")
+        val representation = json.optString("representation", "magnitude_envelope_v1")
+        if (representation !in setOf("magnitude_envelope_v1", "signed_peak_v1")) {
+            invalidScanArtifactContract("Unsupported waveform representation")
+        }
         val pointJson = json.optJSONArray("points")
             ?: invalidScanArtifactContract("Missing waveform points")
         val points = buildList {
@@ -5337,7 +5341,8 @@ class SmartHealthApi(
                 val raw = pointJson.opt(index)
                 val value = (raw as? Number)?.toFloat()
                     ?: invalidScanArtifactContract("Waveform point is not numeric")
-                if (!value.isFinite() || value !in 0f..1f) {
+                val supportedRange = if (representation == "signed_peak_v1") -1f..1f else 0f..1f
+                if (!value.isFinite() || value !in supportedRange) {
                     invalidScanArtifactContract("Waveform point is outside the supported range")
                 }
                 add(value)
@@ -5356,6 +5361,7 @@ class SmartHealthApi(
             sampleRate = sampleRate,
             points = points,
             generatedAt = generatedAt,
+            representation = representation,
         )
     }
 

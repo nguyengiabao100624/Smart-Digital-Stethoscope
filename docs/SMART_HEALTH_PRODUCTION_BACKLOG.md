@@ -2951,3 +2951,11 @@ Canonical release evidence: [SMART_HEALTH_RELEASE_CANDIDATE_RC2_MANIFEST.md](SMA
 - [ ] Diagnose/repair physical mic slot 1 before claiming two-microphone acceptance; current bounded COM9 evidence shows slot 0 active and slot 1 mostly RMS `31-190`.
 - [ ] Run the final records-screen visual/TalkBack traversal when MIUI permits instrumentation input. The guided-scan production HIL is complete and is no longer part of this visual-only blocker.
 - [ ] Pin `search_path` for the four Supabase-advisor trigger functions (`prevent_audit_log_mutation`, `validate_audit_actor_on_insert`, `enforce_active_doctor_access_identity`, `revoke_patient_access_on_doctor_demotion`) through a reviewed migration, then rerun trigger, tenant-negative and security-advisor gates. The previous `patient_import_batches` RLS-disabled advisory is not present in the fresh `2026-09-05` result; do not apply an obsolete RLS change without rechecking policy design.
+
+## 2026-09-05 — Waveform/Chatbot follow-up
+
+- [x] Replace vertical sample bars in completed heart/lung records with a continuous biomedical trace contract; keep vertical moving level bars only in Chatbot speech recording.
+- [x] Version new processed waveform artifacts as `signed_peak_v1`, retain legacy magnitude-envelope rendering and cover both Android/backend paths.
+- [x] Remove the Chatbot full-screen provider dead end: history, draft input, attachment selection and speech-to-text remain available, while Send truthfully waits for server provider configuration.
+- [x] Pass focused backend/Android gates and physical Xiaomi Compose coverage; install APK hash `E062C0A4C82B0D2923E405E5846BFEBB2C53D7DFDD5C9AC58C1C774DE9AF9710`.
+- [ ] Configure an approved external model and server-only `AI_PROVIDER_*` secrets on Render, then run a redacted patient/doctor positive inference canary. This is the only remaining Chatbot runtime gate; the mobile surface is no longer blocked.

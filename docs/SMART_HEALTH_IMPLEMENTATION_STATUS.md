@@ -3295,3 +3295,12 @@ KLTN report artifacts generated from this evidence set:
 - Android records UI now carries stable semantics tags for its compact share target. Focused unit tests, debug/test APK assembly and lint pass. Physical Xiaomi test `MedicalRecordsScreenTest` passes `1/1` at 200% font/dark theme with a 48dp toggle. APK SHA-256 is `71774EA6A6A22DA9F9B3D5A948E08AC1F1DA58E3624552CA29557E69F87A54CE`; test APK is `C28D1F8CA092A9B3DCF283475902C3188313BAE3DF30F1B1BEBD9B31A4D270B8`. The test package was removed and normal App relaunched without fatal/DNS/TLS errors.
 - MIUI rejects enabling TalkBack from ADB without `WRITE_SECURE_SETTINGS`; accessibility stayed `disabled` before and after the bounded attempt. Source semantics and physical Compose behavior pass, but real spoken focus order is still **BLOCKED**, not inferred.
 - Bounded COM9 data has active WSS and slot 0 RMS `26,983–46,211`; slot 1 remains RMS `70–110`. Software selects the healthy mono path, but the second physical microphone requires SEL/wiring/power/capsule/acoustic repair. G4 remains **PARTIAL** for this, signed OTA/rollback and an approved external AI provider.
+
+## 2026-09-05 — Biomedical waveform and AI draft-mode correction
+
+- [x] Separate the clinical record waveform from the Chatbot voice-level meter. Historic magnitude-only artifacts render as a continuous symmetric envelope; new artifacts carry `representation=signed_peak_v1` and render as a continuous signed PCM preview.
+- [x] Preserve backward compatibility for stored `0..1` waveform artifacts while validating new signed points in `-1..1`; expose the representation in the OpenAPI contract and keep amplitude summaries absolute.
+- [x] Keep the Chatbot screen, history, composer, attachments and voice-to-draft controls usable when the external AI provider is not configured. The Send action stays disabled with an explicit server-configuration notice instead of replacing the whole screen with an unavailable dead end.
+- [x] Pass backend waveform `2/2`, AI `12/12`, audio worker `6/6`, API production smoke, backend syntax aggregate, Android full unit/lint/assemble and physical Xiaomi Compose tests: Chatbot `4/4`, record waveform/detail `3/3`.
+- [x] Install the production-targeting debug APK on Xiaomi `21081111RG`; SHA-256 `E062C0A4C82B0D2923E405E5846BFEBB2C53D7DFDD5C9AC58C1C774DE9AF9710`.
+- [ ] Real model inference remains blocked until an approved provider endpoint, model and server-only API key are configured on Render. No local/fabricated medical answer is used as a substitute.

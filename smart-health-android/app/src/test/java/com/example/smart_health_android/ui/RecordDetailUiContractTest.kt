@@ -21,6 +21,9 @@ class RecordDetailUiContractTest {
 
         assertTrue(source.contains("RecordDetailViewModelFactory"))
         assertTrue(source.contains("RecordWaveform("))
+        assertTrue(source.contains("recordWaveformSignedPath"))
+        assertTrue(source.contains("recordWaveformEnvelopePath"))
+        assertTrue(source.contains("drawPath"))
         assertTrue(source.contains("CreateDocument(\"audio/wav\")"))
         assertTrue(source.contains("FileProvider.getUriForFile"))
         assertTrue(source.contains("clearAndSetSemantics"))

@@ -252,12 +252,13 @@ data class ScanWaveform(
     val sampleRate: Int,
     val points: List<Float>,
     val generatedAt: String,
+    val representation: String = "magnitude_envelope_v1",
 ) {
     val peakAmplitude: Float
-        get() = points.maxOrNull() ?: 0f
+        get() = points.maxOfOrNull { kotlin.math.abs(it) } ?: 0f
 
     val averageAmplitude: Float
-        get() = if (points.isEmpty()) 0f else points.average().toFloat()
+        get() = if (points.isEmpty()) 0f else points.map { kotlin.math.abs(it) }.average().toFloat()
 }
 
 data class ScanAudioAccess(

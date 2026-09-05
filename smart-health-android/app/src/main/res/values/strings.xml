@@ -254,8 +254,9 @@
     <string name="ai_assistant_disclaimer">AI chỉ hỗ trợ phân tích dữ liệu và không thay thế đánh giá hoặc quyết định lâm sàng của người có chuyên môn.</string>
     <string name="ai_assistant_empty_title">Chưa có phiên phân tích</string>
     <string name="ai_assistant_empty_message">Lịch sử do máy chủ xác nhận sẽ xuất hiện tại đây. Shcare không tạo hội thoại hoặc chẩn đoán mẫu.</string>
-    <string name="ai_assistant_unavailable_title">Trợ lý AI chưa khả dụng</string>
-    <string name="ai_assistant_unavailable_message">Hệ thống chưa cấu hình provider AI thật. Bạn vẫn có thể xem các kết quả đo và gửi chúng cho bác sĩ.</string>
+    <string name="ai_assistant_unavailable_title">Trợ lý AI đang chờ cấu hình</string>
+    <string name="ai_assistant_unavailable_message">Bạn vẫn có thể xem lịch sử, nhập nội dung, đính kèm tệp và dùng micro. Gửi câu hỏi sẽ được mở khi quản trị viên cấu hình mô hình AI trên máy chủ.</string>
+    <string name="ai_assistant_provider_send_disabled">Chưa thể gửi: máy chủ chưa được cấu hình mô hình AI.</string>
     <string name="ai_assistant_load_error_title">Không thể tải lịch sử AI</string>
     <string name="ai_assistant_input_label">Câu hỏi về dữ liệu đo</string>
     <string name="ai_assistant_input_hint">Nhập câu hỏi cần hỗ trợ phân tích</string>
@@ -745,6 +746,8 @@
     <string name="record_detail_stop">Dừng ghi và lưu</string>
     <string name="record_detail_stopping">Đang gửi yêu cầu dừng…</string>
     <string name="record_detail_waveform_title">Dạng sóng đã xử lý</string>
+    <string name="record_detail_heart_waveform_title">Dạng sóng âm tim đã xử lý</string>
+    <string name="record_detail_lung_waveform_title">Dạng sóng âm phổi đã xử lý</string>
     <string name="record_detail_waveform_loading">Đang tải dạng sóng thật từ hệ thống…</string>
     <string name="record_detail_waveform_unavailable">Lượt đo này chưa có dữ liệu dạng sóng đã xử lý.</string>
     <string name="record_detail_waveform_error">Không thể tải dạng sóng. Bản ghi âm vẫn có thể khả dụng.</string>

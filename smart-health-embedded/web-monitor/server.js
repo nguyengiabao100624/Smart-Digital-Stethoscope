@@ -5524,6 +5524,15 @@ function copyOwnFields(source, fieldNames) {
 function publicDevice(device) {
   if (!device) return null;
   const safeDevice = copyOwnFields(device, PUBLIC_DEVICE_FIELDS);
+  const safeTelemetry = sanitizeDeviceTelemetry(device.telemetry);
+  for (const field of ["wifiRssi", "wifiSsid", "ipAddress", "audioStatus"]) {
+    if (
+      (safeDevice[field] === undefined || safeDevice[field] === null || safeDevice[field] === "") &&
+      safeTelemetry[field] !== undefined
+    ) {
+      safeDevice[field] = safeTelemetry[field];
+    }
+  }
   const privateRotation = sanitizeDeviceCredentialRotation(device.credentialRotation);
   if (privateRotation.id) {
     safeDevice.credentialRotation = {
@@ -5545,8 +5554,8 @@ function publicDevice(device) {
   } else {
     delete safeDevice.credentialRotation;
   }
-  if (device.telemetry) {
-    safeDevice.telemetry = sanitizeDeviceTelemetry(device.telemetry);
+  if (Object.keys(safeTelemetry).length > 0) {
+    safeDevice.telemetry = safeTelemetry;
   }
   if (isCanonicalDeviceOtaLifecycle(device.ota)) {
     const publicOta = copyOwnFields(device.ota, PUBLIC_DEVICE_OTA_FIELDS);

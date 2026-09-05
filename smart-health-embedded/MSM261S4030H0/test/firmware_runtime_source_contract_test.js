@@ -67,6 +67,10 @@ assert.notEqual(otaReceiptEnd, -1, "missing OTA receipt implementation end");
 const otaReceipt = source.slice(otaReceiptStart, otaReceiptEnd);
 const command = section("void handleCloudCommand(", "void handleCloudMessage(");
 const cloudMessage = section("void handleCloudMessage(", "void setupCloudSocket(");
+const cloudTelemetry = section(
+  "String cloudTelemetryJson(const char *type) {",
+  "void rejectCloudTransport(",
+);
 const bootHealth = section(
   "void beginPendingFirmwareHealthCheck() {",
   "bool pendingFirmwareHealthReady()",
@@ -230,6 +234,14 @@ assert.doesNotMatch(
 assert.match(command, /startSmartConfigProvisioning\(/);
 assert.match(command, /SMARTCONFIG_LISTENING/);
 assert.doesNotMatch(command, /runSetupPortal\(/);
+assert.match(cloudTelemetry, /WiFi\.status\(\) == WL_CONNECTED/);
+assert.match(cloudTelemetry, /connectedWifiSsid = wifiConnected \? WiFi\.SSID\(\)/);
+assert.match(cloudTelemetry, /connectedIpAddress = wifiConnected \? WiFi\.localIP\(\)\.toString\(\)/);
+assert.doesNotMatch(
+  cloudTelemetry,
+  /jsonEscape\(wifiSsid\)/,
+  "cloud telemetry must report the associated SSID rather than a stale stored candidate",
+);
 
 assert.match(ota, /beginBlockingOtaRuntime\(/);
 assert.match(ota, /endBlockingOtaRuntime\(/);

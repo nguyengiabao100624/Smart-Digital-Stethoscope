@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const net = require("node:net");
 
 const DEVICE_AUTH_PROTOCOL_VERSION = 1;
 const DEVICE_AUTH_CHALLENGE_TTL_MS = 10_000;
@@ -160,6 +161,25 @@ function sanitizeDeviceTelemetry(value) {
   if (typeof source.connectionMethod === "string") {
     const connectionMethod = source.connectionMethod.trim().slice(0, 40);
     if (connectionMethod) sanitized.connectionMethod = connectionMethod;
+  }
+  if (
+    Number.isInteger(source.wifiRssi) &&
+    source.wifiRssi >= -127 &&
+    source.wifiRssi <= 0
+  ) {
+    sanitized.wifiRssi = source.wifiRssi;
+  }
+  if (typeof source.wifiSsid === "string") {
+    const wifiSsid = source.wifiSsid.trim().slice(0, 120);
+    if (wifiSsid && !/[\u0000-\u001f\u007f]/.test(wifiSsid)) {
+      sanitized.wifiSsid = wifiSsid;
+    }
+  }
+  if (typeof source.ipAddress === "string") {
+    const ipAddress = source.ipAddress.trim().slice(0, 80);
+    if (net.isIP(ipAddress) > 0 && ipAddress !== "0.0.0.0" && ipAddress !== "::") {
+      sanitized.ipAddress = ipAddress;
+    }
   }
   return sanitized;
 }

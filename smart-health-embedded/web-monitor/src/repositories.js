@@ -579,6 +579,7 @@ function rowToDevice(row) {
   if (!row) return null;
   const ota = sanitizeDeviceOtaLifecycle(row.ota);
   const otaStatus = normalizeDeviceOtaStatus(row.ota_status || ota.status);
+  const telemetry = sanitizeDeviceTelemetry(row.telemetry);
   if (otaStatus) ota.status = otaStatus;
   return normalizeDeviceSecretMaterial({
     id: row.id,
@@ -596,15 +597,19 @@ function rowToDevice(row) {
     purchaseDate: row.purchase_date ? String(row.purchase_date).slice(0, 10) : "",
     status: row.status || "unclaimed",
     signal: row.signal === null || row.signal === undefined ? null : Number(row.signal),
+    wifiRssi: telemetry.wifiRssi,
+    wifiSsid: telemetry.wifiSsid || "",
+    ipAddress: telemetry.ipAddress || "",
     battery: row.battery === null || row.battery === undefined ? null : Number(row.battery),
     connected: Boolean(row.connected),
     connectionMethod: row.connection_method || "",
+    audioStatus: telemetry.audioStatus || "",
     secretHash: row.secret_hash || "",
     credentialRotation: sanitizeDeviceCredentialRotation(row.credential_rotation),
     ota,
     otaStatus,
     firmwareVersion: row.firmware_version || "",
-    telemetry: sanitizeDeviceTelemetry(row.telemetry),
+    telemetry,
     lastSeenAt: toIso(row.last_seen_at),
     revokedAt: toIso(row.revoked_at),
     createdAt: toIso(row.created_at),

@@ -1681,6 +1681,9 @@ test("device telemetry is allowlisted and persisted as a safe JSON/SQL snapshot"
     otaStatus: "confirmed",
     audioStatus: "ready",
     connectionMethod: "WSS",
+    wifiRssi: -57,
+    wifiSsid: "Shcare Lab 2.4G",
+    ipAddress: "192.168.20.44",
     i2sSlot0Rms: 1_280,
     i2sSlot0Peak: 4_096,
     i2sSlot0WindowCount: 40,
@@ -1722,6 +1725,9 @@ test("device telemetry is allowlisted and persisted as a safe JSON/SQL snapshot"
     otaStatus: "confirmed",
     audioStatus: "ready",
     connectionMethod: "WSS",
+    wifiRssi: -57,
+    wifiSsid: "Shcare Lab 2.4G",
+    ipAddress: "192.168.20.44",
     i2sSlot0Rms: 1_280,
     i2sSlot0Peak: 4_096,
     i2sSlot0WindowCount: 40,
@@ -1751,6 +1757,12 @@ test("device telemetry is allowlisted and persisted as a safe JSON/SQL snapshot"
     );
   }
   assert.deepEqual(sanitizeDeviceTelemetry({ audioProfile: "raw" }), {});
+  assert.deepEqual(sanitizeDeviceTelemetry({ wifiRssi: -128 }), {});
+  assert.deepEqual(sanitizeDeviceTelemetry({ wifiRssi: 1 }), {});
+  assert.deepEqual(sanitizeDeviceTelemetry({ wifiRssi: "-57" }), {});
+  assert.deepEqual(sanitizeDeviceTelemetry({ wifiSsid: "bad\u0000ssid" }), {});
+  assert.deepEqual(sanitizeDeviceTelemetry({ ipAddress: "not-an-ip" }), {});
+  assert.deepEqual(sanitizeDeviceTelemetry({ ipAddress: "0.0.0.0" }), {});
   assert.deepEqual(sanitizeDeviceTelemetry({ deviceSecret: "forbidden", ...telemetry }), telemetry);
   assert.equal(Object.hasOwn(telemetry, "rawAudio"), false);
   assert.equal(Object.hasOwn(telemetry, "pcmSamples"), false);
@@ -1805,6 +1817,9 @@ test("authenticated device telemetry reaches the tenant-scoped device projection
     otaStatus: "confirmed",
     audioStatus: "ready",
     connectionMethod: "WSS",
+    wifiRssi: -62,
+    wifiSsid: "Clinic 2.4G",
+    ipAddress: "192.168.10.27",
     i2sSlot0Rms: 1_280,
     i2sSlot0Peak: 4_096,
     i2sSlot0WindowCount: 40,
@@ -1844,6 +1859,9 @@ test("authenticated device telemetry reaches the tenant-scoped device projection
     otaStatus: "confirmed",
     audioStatus: "ready",
     connectionMethod: "WSS",
+    wifiRssi: -62,
+    wifiSsid: "Clinic 2.4G",
+    ipAddress: "192.168.10.27",
     i2sSlot0Rms: 1_280,
     i2sSlot0Peak: 4_096,
     i2sSlot0WindowCount: 40,
@@ -1857,6 +1875,9 @@ test("authenticated device telemetry reaches the tenant-scoped device projection
     i2sSlot1SampleCount: 10_240,
     i2sSlot1NonZeroSampleCount: 9_620,
   });
+  assert.equal(device?.wifiRssi, -62);
+  assert.equal(device?.wifiSsid, "Clinic 2.4G");
+  assert.equal(device?.ipAddress, "192.168.10.27");
   client.socket.close();
   await client.closed();
 });
@@ -1959,6 +1980,12 @@ test("SQL and JSON devices retain the same one-way verification material", async
               type: "stethoscope",
               status: "available",
               secret_hash: secrets.alpha,
+              telemetry: {
+                wifiRssi: -64,
+                wifiSsid: "Clinic SQL 2.4G",
+                ipAddress: "192.168.30.18",
+                audioStatus: "ready",
+              },
             },
           ],
         };
@@ -1979,6 +2006,10 @@ test("SQL and JSON devices retain the same one-way verification material", async
   const sqlDevice = await repository.devices.findById("dev_sql");
   assert.equal(sqlDevice.secretHash, expectedHash, "legacy SQL values must normalize to the canonical hash format");
   assert.equal(sqlDevice.secret, undefined);
+  assert.equal(sqlDevice.wifiRssi, -64);
+  assert.equal(sqlDevice.wifiSsid, "Clinic SQL 2.4G");
+  assert.equal(sqlDevice.ipAddress, "192.168.30.18");
+  assert.equal(sqlDevice.audioStatus, "ready");
   assert.equal(repairedSqlHash, expectedHash, "legacy SQL plaintext must be write-repaired in place");
 
   const jsonDevice = {

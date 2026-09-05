@@ -3209,6 +3209,9 @@ String cloudWsUrl() {
 bool sendCloudTelemetry(const char *type);
 
 String cloudTelemetryJson(const char *type) {
+  const bool wifiConnected = WiFi.status() == WL_CONNECTED;
+  const String connectedWifiSsid = wifiConnected ? WiFi.SSID() : String("");
+  const String connectedIpAddress = wifiConnected ? WiFi.localIP().toString() : String("");
   String json = "{";
   json += "\"type\":\"";
   json += type;
@@ -3383,13 +3386,13 @@ String cloudTelemetryJson(const char *type) {
   json += jsonEscape(otaBootOutcome.c_str());
   json += "\",";
   json += "\"wifiSsid\":\"";
-  json += jsonEscape(wifiSsid);
+  json += jsonEscape(connectedWifiSsid);
   json += "\",";
   json += "\"wifiRssi\":";
-  json += String(WiFi.RSSI());
+  json += String(wifiConnected ? WiFi.RSSI() : 0);
   json += ",";
   json += "\"ipAddress\":\"";
-  json += WiFi.localIP().toString();
+  json += jsonEscape(connectedIpAddress);
   json += "\",";
   json += "\"backendHost\":\"";
   json += jsonEscape(backendHost);

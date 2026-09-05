@@ -101,6 +101,15 @@ test("normalized patient, scan, and AI writes contain envelopes instead of PHI p
     rawResult: { clinical: "SYNTHETIC-PHI-MARKER-RAW" },
   });
 
+  const scanInsert = statements.find((statement) =>
+    statement.sql.includes("INSERT INTO scan_sessions"));
+  assert.ok(scanInsert, "scan persistence must issue a canonical PostgreSQL upsert");
+  assert.deepEqual(
+    [10, 11, 25, 29].map((index) => scanInsert.parameters[index]),
+    [null, null, null, null],
+    "blank optional scan timestamps must reach PostgreSQL as null instead of an empty string",
+  );
+
   const rawParameters = JSON.stringify(statements.map((statement) => statement.parameters));
   assert.equal(rawParameters.includes("SYNTHETIC-PHI-MARKER"), false);
   assert.equal(

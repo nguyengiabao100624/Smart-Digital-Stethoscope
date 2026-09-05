@@ -2664,7 +2664,7 @@ function createRepositories(options) {
           optionalForeignKey(patient.accountUserId),
           optionalForeignKey(patient.primaryDoctorId),
           optional(encrypted ? "" : patient.doctorName),
-          optional(patient.createdAt),
+          optionalTimestamp(patient.createdAt),
           patient.updatedAt || nowIso(),
           JSON.stringify(encrypted ? phiPayload : {}),
         ],
@@ -2911,7 +2911,7 @@ function createRepositories(options) {
           device.purchaseDate === undefined || device.purchaseDate === "" ? null : device.purchaseDate,
           optionalTimestamp(device.lastSeenAt),
           optionalTimestamp(device.revokedAt),
-          optional(device.createdAt),
+          optionalTimestamp(device.createdAt),
           device.updatedAt || nowIso(),
           JSON.stringify(telemetry),
           JSON.stringify(sanitizeDeviceCredentialRotation(device.credentialRotation)),
@@ -3051,8 +3051,8 @@ function createRepositories(options) {
           scan.processingStatus || scan.status || "recording",
           scan.mode || "heart",
           optional(scan.bodySite),
-          optional(scan.startedAt),
-          optional(scan.endedAt),
+          optionalTimestamp(scan.startedAt),
+          optionalTimestamp(scan.endedAt),
           scan.sampleRate || 16000,
           scan.sampleCount || 0,
           scan.durationSeconds || 0,
@@ -3066,7 +3066,7 @@ function createRepositories(options) {
           optional(encrypted ? "" : scan.doctorNotes),
           optional(scan.audioUrl),
           optional(scan.wavFile),
-          optional(scan.createdAt || scan.startedAt),
+          optionalTimestamp(scan.createdAt || scan.startedAt),
           scan.updatedAt || nowIso(),
           Number(scan.uploadedBytes || 0),
           Number(scan.audioChunkCount || 0),
@@ -3108,7 +3108,7 @@ function createRepositories(options) {
           audioFile.contentType || "audio/wav",
           audioFile.byteSize || 0,
           audioFile.sampleRate || 16000,
-          optional(audioFile.createdAt),
+          optionalTimestamp(audioFile.createdAt),
         ]
       )
     );
@@ -3154,7 +3154,7 @@ function createRepositories(options) {
           JSON.stringify(encrypted ? {} : aiResult.rawResult || {}),
           aiResult.status || "queued",
           optional(aiResult.errorCode),
-          optional(aiResult.createdAt),
+          optionalTimestamp(aiResult.createdAt),
           aiResult.updatedAt || nowIso(),
           JSON.stringify(encrypted ? phiPayload : {}),
         ]
@@ -3285,7 +3285,7 @@ function createRepositories(options) {
           audioFile.contentType || "audio/wav",
           audioFile.byteSize || 0,
           audioFile.sampleRate || 16000,
-          optional(audioFile.createdAt),
+          optionalTimestamp(audioFile.createdAt),
         ],
       );
       if (!audioResult.rows?.[0]) {
@@ -3322,7 +3322,7 @@ function createRepositories(options) {
           JSON.stringify(aiEncrypted ? {} : aiResult.rawResult || {}),
           aiResult.status || "queued",
           optional(aiResult.errorCode),
-          optional(aiResult.createdAt),
+          optionalTimestamp(aiResult.createdAt),
           aiResult.updatedAt || nowIso(),
           JSON.stringify(aiEncrypted ? aiPhiPayload : {}),
         ],
@@ -3347,7 +3347,7 @@ function createRepositories(options) {
           VALUES ($1, $2, $3, $4::jsonb, COALESCE($5::timestamptz, now()))
           ON CONFLICT (id) DO NOTHING
         `,
-        [event.id, event.deviceId, event.eventType, JSON.stringify(event.payload || {}), optional(event.createdAt)]
+        [event.id, event.deviceId, event.eventType, JSON.stringify(event.payload || {}), optionalTimestamp(event.createdAt)]
       )
     );
   }
@@ -3455,7 +3455,7 @@ function createRepositories(options) {
           Number(device.notificationProtocolVersion || 0),
           device.appVersion || "",
           device.enabled !== false,
-          optional(device.createdAt),
+          optionalTimestamp(device.createdAt),
           device.updatedAt || nowIso(),
         ]
       );

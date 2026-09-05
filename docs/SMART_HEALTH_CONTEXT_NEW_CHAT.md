@@ -2,6 +2,13 @@
 
 Last updated: 2026-09-05
 
+## 2026-09-05 exact MSM261S4030H0 channel mapping and fresh COM9 truth
+
+- The ambiguity around "mic 2" is closed at the electrical/I2S boundary. MSM261S4030H0 `L/R=GND` emits Left and `L/R=VDD` emits Right; ESP32-S3 stereo RX buffers `[Left, Right]`. Firmware `slot 0` is therefore Left, and `slot 1` is Right. The enclosure side still depends on the actual harness: the module whose SEL/L/R is tied to 3.3 V is the Right/slot-1 mic.
+- Both microphones use 3.3 V, common GND, CHIPEN high, shared `BCLK=GPIO11`, `WS=GPIO12` and tri-state `SD=GPIO10`. Never use 5 V or leave CHIPEN/SEL floating. The command guide now contains a power-off wiring table and bounded per-capsule tap procedure.
+- A fresh 16-second COM9 capture shows Left/slot-0 RMS ranging `1,325-39,455`, but Right/slot-1 only `22-56`; the second path is still physically near silent. This is not a gain/software issue and no generic firmware was flashed over the enrolled board.
+- Named Left/Right slot constants, the focused source/golden contract and the ESP32-S3 production build pass. Two-mic acceptance remains PHYSICAL BLOCKED until wiring/capsule repair and a new independent response from both slots. G4 remains PARTIAL.
+
 ## 2026-09-05 production network telemetry and WSS-only runtime closure
 
 - Backend authentication now accepts only bounded, syntactically valid `wifiSsid`, `wifiRssi` and `ipAddress` telemetry, persists it in PostgreSQL JSONB, rehydrates the same top-level fields after reload and projects one sanitized representation to Admin/Android. Firmware reports the currently associated SSID/local IP instead of a stale saved candidate.

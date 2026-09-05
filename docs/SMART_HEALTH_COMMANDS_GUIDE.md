@@ -5154,3 +5154,32 @@ $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
 The test selects only a backend-confirmed online device, reuses one idempotency key for ambiguous transport reconciliation, records for eight seconds, explicitly stops, waits for a durable `completed` scan of at least five seconds, verifies sample-count coherence, requests the waveform and downloads a non-empty WAV. It accepts no password, bearer, patient ID or device ID through instrumentation arguments. If a one-use Firebase custom token is required to restore the authorized test session, place it only in app-private storage and delete it before exchange; never pass or print it through ADB arguments, source, shell history or logs.
 
 For the 2026-09-05 production proof, Render release `cdf08214c83d` produced `scan_20260905035023_04e2906f`: `8.392 s`, `134272 @ 16 kHz`, 128 waveform points and a 268588-byte WAV. Four exact interrupted reproduction records were deleted after the PASS. COM9 still requires a separate two-slot hardware check because slot 1 is near silence; do not solve that by blindly amplifying noise or flashing a generic image over the enrolled credential.
+
+### MSM261S4030H0 dual-microphone wiring and bounded COM9 check
+
+The production firmware uses one shared I2S bus. The exact wiring contract is:
+
+| Signal | ESP32-S3 / level | MSM261S4030H0 role |
+| --- | --- | --- |
+| VDD | `3.3 V` | Supply both microphones; never use 5 V |
+| GND | Common ESP32 GND | Ground both microphones |
+| CHIPEN | `3.3 V` | Keep each microphone enabled |
+| SCK / BCLK | `GPIO11` | Shared serial clock |
+| WS / LRCLK | `GPIO12` | Shared word-select clock |
+| SD / DOUT | `GPIO10` | Shared tri-state data line |
+| L/R or SEL, Left mic | `GND` | Emits the Left I2S slot (`slot 0`) |
+| L/R or SEL, Right mic | `3.3 V` | Emits the Right I2S slot (`slot 1`) |
+
+Power the board off before changing wiring. Never leave CHIPEN or L/R floating,
+never short 3.3 V to GND, and do not infer enclosure position from the I2S
+channel name: the module wired with `L/R=3.3 V` is the firmware's Right/slot-1
+microphone. The component datasheet also recommends a 100 kOhm pull-down on the
+shared SD line and local supply decoupling.
+
+After reconnecting power, use a bounded serial read and compare
+`i2sSlot0Rms/i2sSlot0Peak` with `i2sSlot1Rms/i2sSlot1Peak`. Tap one capsule at a
+time. Both slots must react independently and remain clearly above the idle
+digital floor. Opening COM9 may reset boards whose USB-UART adapter wires DTR or
+RTS to reset; do not run an unbounded serial monitor and do not print network or
+credential fields. The mapping follows the MSM261S4030H0 datasheet and the
+ESP32-S3 stereo RX `[Left, Right]` buffer contract.

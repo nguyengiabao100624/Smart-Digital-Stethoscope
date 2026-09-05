@@ -1,5 +1,11 @@
 # Shcare Active Restart Checkpoint
 
+## 2026-09-05 dual-microphone wiring checkpoint
+
+- "Mic 2" in current diagnostics means I2S Right/slot 1, not a guaranteed enclosure side. For MSM261S4030H0, its `L/R` or `SEL` pin must be tied to 3.3 V; Left/slot 0 uses GND. Both modules require 3.3 V, common GND and CHIPEN high, and share `SCK=GPIO11`, `WS=GPIO12`, `SD=GPIO10`.
+- Fresh bounded COM9 evidence remains asymmetric: Left/slot-0 RMS `1,325-39,455`; Right/slot-1 RMS `22-56`. Repair/check the Right path with power removed, then tap each capsule independently and rerun serial evidence.
+- Firmware mapping comments/constants, its focused golden contract and the production build pass. No firmware upload, erase or eFuse operation was performed. This closes naming ambiguity only; physical two-mic acceptance and overall G4 remain open.
+
 ## 2026-09-01 authoritative production checkpoint
 
 - This section supersedes older live URLs, Render workspaces and Firebase version markers below. The active backend is `https://shcare-api-prod.onrender.com`, Render release `git-08105905a462`; `/api/health` is HTTP 200 and exact-origin CORS, authentication, tenant isolation and production role smokes are green.

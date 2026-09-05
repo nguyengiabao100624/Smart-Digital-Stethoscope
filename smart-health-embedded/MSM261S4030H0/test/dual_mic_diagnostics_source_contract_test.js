@@ -66,6 +66,11 @@ assert.match(source, /#define I2S_SD 10/);
 assert.match(source, /opposite L\/R select levels/);
 assert.match(source, /#define I2S_CHANNEL_COUNT 2/);
 assert.match(source, /I2S_CHANNEL_FMT_RIGHT_LEFT/);
+assert.match(source, /I2S_LEFT_SLOT_INDEX = 0/);
+assert.match(source, /I2S_RIGHT_SLOT_INDEX = 1/);
+assert.match(source, /L\/R=GND emits the Left slot/);
+assert.match(source, /L\/R=VDD \(3\.3 V\) emits the/);
+assert.match(source, /interleaved \[Left, Right\]/);
 
 const telemetry = section("String cloudTelemetryJson(const char *type) {", "void rejectCloudTransport(");
 const diagnostics = section(

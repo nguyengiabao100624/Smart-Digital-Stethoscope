@@ -558,13 +558,17 @@ void configureAudioProfile(
 #define I2S_SD 10
 // Both microphones share BCLK, WS and DATA. Their hardware select pins must be
 // wired to opposite L/R select levels so each microphone occupies one I2S slot.
-// Slot diagnostics intentionally stay numbered because the physical select
-// polarity must be verified on the attached microphones during G3 HIL.
+// MSM261S4030H0: L/R=GND emits the Left slot and L/R=VDD (3.3 V) emits the
+// Right slot. ESP32-S3 stereo RX is interleaved [Left, Right], therefore slot 0
+// is Left and slot 1 is Right. These channel names describe the I2S frame; the
+// capsule's physical position in the enclosure still depends on its wiring.
 
 #define SAMPLE_RATE 16000
 // 8 ms packets keep latency low while avoiding browser/network underruns.
 #define BUFFER_LEN 128
 #define I2S_CHANNEL_COUNT 2
+constexpr std::uint8_t I2S_LEFT_SLOT_INDEX = 0;
+constexpr std::uint8_t I2S_RIGHT_SLOT_INDEX = 1;
 
 static_assert(SAMPLE_RATE == shcare::kAudioSampleRate,
               "capture rate must match the canonical audio contract");
@@ -6424,8 +6428,10 @@ void captureI2sFrame() {
     shcare::AudioSlotFrameStats slot1Stats;
     for (int i = 0; i < samplesRead; ++i) {
       const int sampleOffset = i * I2S_CHANNEL_COUNT;
-      const int32_t shifted0 = micBuffer[sampleOffset] >> RAW_SHIFT;
-      const int32_t shifted1 = micBuffer[sampleOffset + 1] >> RAW_SHIFT;
+      const int32_t shifted0 =
+          micBuffer[sampleOffset + I2S_LEFT_SLOT_INDEX] >> RAW_SHIFT;
+      const int32_t shifted1 =
+          micBuffer[sampleOffset + I2S_RIGHT_SLOT_INDEX] >> RAW_SHIFT;
       const std::uint32_t absolute0 = static_cast<std::uint32_t>(abs32(shifted0));
       const std::uint32_t absolute1 = static_cast<std::uint32_t>(abs32(shifted1));
       slot0Stats.energy += static_cast<std::uint64_t>(

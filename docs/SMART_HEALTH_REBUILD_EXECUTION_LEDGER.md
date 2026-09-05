@@ -1,5 +1,13 @@
 # Shcare rebuild execution ledger
 
+## 2026-09-05 - Exact dual-microphone channel mapping
+
+| Plan row | State | Current proof / next action |
+| --- | --- | --- |
+| MSM261S4030H0 wiring contract | Source/docs PASS | Datasheet polarity and ESP32-S3 stereo ordering are now explicit: `slot 0 = Left = L/R to GND`; `slot 1 = Right = L/R to 3.3 V`. Both capsules share `SCK=GPIO11`, `WS=GPIO12`, `SD=GPIO10`, common GND and 3.3 V; CHIPEN must be high. Physical enclosure position is not inferred from the channel name. |
+| Firmware regression | PASS, not flashed | Named slot constants are covered by the dual-mic source/golden contract and the production target builds successfully. The generic build was not flashed over the enrolled device. |
+| Physical dual-mic gate | PHYSICAL BLOCKED | Fresh bounded COM9 data still shows Left/slot-0 RMS `1,325-39,455`, while Right/slot-1 RMS is only `22-56`. Power down, repair/check the Right capsule's 3.3 V, GND, CHIPEN, SEL, shared clocks/data and acoustic path, then rerun the per-capsule tap test. |
+
 ## 2026-09-05 - Production telemetry and WSS-only runtime
 
 | Plan row | State | Current proof / next action |

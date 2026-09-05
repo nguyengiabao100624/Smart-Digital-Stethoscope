@@ -2,6 +2,12 @@
 
 Last updated: 2026-09-05
 
+## 2026-09-05 dual-microphone mapping status
+
+- **PASS/SOURCE:** MSM261S4030H0 and ESP32-S3 contracts now identify `slot 0 = Left = SEL/L/R at GND` and `slot 1 = Right = SEL/L/R at 3.3 V`; the channel name does not claim the module's enclosure position. Focused golden/source test and production firmware build pass.
+- **BLOCKED/PHYSICAL:** COM9 still measures healthy Left/slot-0 activity (`RMS 1,325-39,455`) and near-silent Right/slot-1 activity (`RMS 22-56`). The Right module must be checked with power off for 3.3 V supply, common ground, CHIPEN high, SEL high, shared GPIO11/12/10 continuity and capsule/acoustic obstruction.
+- **NO DESTRUCTIVE CHANGE:** the enrolled board was read only. The generic candidate was built but not flashed; no erase/eFuse action occurred. G4 is not PASS until the repaired path produces independent real signal and the remaining physical/provider gates close.
+
 ## 2026-09-05 production network telemetry and transport status
 
 - **PASS/LIVE — data parity:** authenticated WSS telemetry now carries only validated Wi-Fi SSID/RSSI/IP values, persists through PostgreSQL reload and reaches Admin/Android with identical top-level and nested fields. Firmware reports the active association rather than stale saved values. The enrolled production device is online and the former missing Wi-Fi/IP display is closed.

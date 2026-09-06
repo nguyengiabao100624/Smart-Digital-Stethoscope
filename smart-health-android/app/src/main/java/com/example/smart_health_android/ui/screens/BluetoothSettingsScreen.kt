@@ -30,10 +30,12 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MedicalServices
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -74,6 +76,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.smart_health_android.R
 import com.example.smart_health_android.data.SmartDevice
+import com.example.smart_health_android.devices.AudioSignalQuality
 import com.example.smart_health_android.devices.DeviceFreshness
 import com.example.smart_health_android.devices.DeviceFreshnessStatus
 import com.example.smart_health_android.devices.DeviceHealthSnapshot
@@ -589,6 +592,7 @@ internal fun DeviceHealthPanel(
             }
 
             PresenceSummary(snapshot)
+            AudioSignalQualityNotice(snapshot)
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
             HealthSection(
@@ -741,6 +745,58 @@ private fun PresenceSummary(snapshot: DeviceHealthSnapshot) {
 }
 
 @Composable
+private fun AudioSignalQualityNotice(snapshot: DeviceHealthSnapshot) {
+    val quality = snapshot.audioSignalQualityKind ?: return
+    val titleRes: Int
+    val messageRes: Int
+    when (quality) {
+        AudioSignalQuality.TooWeak -> {
+            titleRes = R.string.device_health_signal_quality_weak_title
+            messageRes = R.string.device_health_signal_quality_weak_message
+        }
+        AudioSignalQuality.Clipped -> {
+            titleRes = R.string.device_health_signal_quality_clipped_title
+            messageRes = R.string.device_health_signal_quality_clipped_message
+        }
+        AudioSignalQuality.Detected -> return
+    }
+    val spacing = ShcareTheme.spacing
+    val title = stringResource(titleRes)
+    val message = stringResource(messageRes)
+    Surface(
+        color = ShcareTheme.colors.warningContainer,
+        contentColor = ShcareTheme.colors.onWarningContainer,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                stateDescription = "$title. $message"
+            }
+            .testTag("device_health.signal_quality_notice"),
+    ) {
+        Row(
+            modifier = Modifier.padding(spacing.large),
+            horizontalArrangement = Arrangement.spacedBy(spacing.medium),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.extraSmall)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.semantics { heading() },
+                )
+                Text(text = message, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
 private fun DevicePresenceChip(status: DevicePresenceStatus) {
     Surface(
         color = status.containerColor(),
@@ -876,6 +932,21 @@ private fun DeviceHealthSnapshot.telemetryMetrics(): List<HealthMetric> {
             label = stringResource(R.string.device_health_audio_status),
             value = audioStatus ?: missing,
             tone = if (audioStatus.isFailureStatus()) HealthMetricTone.Error else HealthMetricTone.Normal,
+        ),
+        HealthMetric(
+            key = "signal_quality",
+            icon = Icons.Default.Mic,
+            label = stringResource(R.string.device_health_signal_quality),
+            value = when (audioSignalQualityKind) {
+                AudioSignalQuality.Detected -> stringResource(R.string.device_health_signal_quality_detected)
+                AudioSignalQuality.TooWeak -> stringResource(R.string.device_health_signal_quality_too_weak)
+                AudioSignalQuality.Clipped -> stringResource(R.string.device_health_signal_quality_clipped)
+                null -> missing
+            },
+            tone = when (audioSignalQualityKind) {
+                AudioSignalQuality.TooWeak, AudioSignalQuality.Clipped -> HealthMetricTone.Warning
+                AudioSignalQuality.Detected, null -> HealthMetricTone.Normal
+            },
         ),
         HealthMetric(
             key = "uptime",

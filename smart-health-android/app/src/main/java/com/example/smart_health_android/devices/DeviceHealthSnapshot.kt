@@ -19,6 +19,18 @@ enum class DeviceFreshnessStatus {
     Future,
 }
 
+enum class AudioSignalQuality(val wireValue: String) {
+    Detected("detected"),
+    TooWeak("too_weak"),
+    Clipped("clipped"),
+    ;
+
+    companion object {
+        fun fromWireValue(value: String?): AudioSignalQuality? =
+            entries.firstOrNull { it.wireValue == value?.trim()?.lowercase() }
+    }
+}
+
 data class DeviceFreshness(
     val status: DeviceFreshnessStatus,
     val ageSeconds: Long? = null,
@@ -44,7 +56,11 @@ data class DeviceHealthSnapshot(
     val lastCommandUptimeMs: Long?,
     val otaStatus: String?,
     val audioStatus: String?,
+    val audioSignalQuality: String?,
 ) {
+    val audioSignalQualityKind: AudioSignalQuality?
+        get() = AudioSignalQuality.fromWireValue(audioSignalQuality)
+
     companion object {
         private val DefaultStaleAfter: Duration = Duration.ofMinutes(2)
         private val AllowedClockSkew: Duration = Duration.ofMinutes(1)
@@ -101,6 +117,7 @@ data class DeviceHealthSnapshot(
                 lastCommandUptimeMs = telemetry.lastCommandUptimeMs,
                 otaStatus = otaStatus,
                 audioStatus = audioStatus,
+                audioSignalQuality = telemetry.audioSignalQuality.reportedValue(),
             )
         }
 

@@ -862,6 +862,7 @@ data class SmartDeviceTelemetry(
     val otaStatus: String = "",
     val audioStatus: String = "",
     val connectionMethod: String = "",
+    val audioSignalQuality: String = "",
 )
 
 data class SmartDevice(

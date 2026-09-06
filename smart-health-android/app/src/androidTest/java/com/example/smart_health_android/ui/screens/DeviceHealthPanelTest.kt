@@ -134,4 +134,61 @@ class DeviceHealthPanelTest {
         composeRule.onNodeWithTag("device_management.configure_wifi").assertExists()
         composeRule.onAllNodesWithTag("device_management.release").assertCountEquals(0)
     }
+
+    @Test
+    fun weakMicSignalShowsQualityWarningNoticeAndMetric() {
+        val snapshot = DeviceHealthSnapshot.from(
+            device = SmartDevice(
+                id = "dev-001",
+                online = true,
+                lastSeenAt = "2026-07-18T11:59:30Z",
+                telemetry = SmartDeviceTelemetry(audioSignalQuality = "too_weak"),
+            ),
+            now = Instant.parse("2026-07-18T12:00:00Z"),
+        )
+
+        composeRule.setContent {
+            ShcareMobileTheme {
+                DeviceHealthPanel(
+                    snapshot = snapshot,
+                    isReleasing = false,
+                    mutationEnabled = true,
+                    onRelease = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("device_health.signal_quality_notice")
+            .assertTextContains("chưa thu được âm tim/phổi")
+        composeRule.onNodeWithTag("device_health.metric.signal_quality")
+            .assertTextContains("quá yếu")
+    }
+
+    @Test
+    fun detectedMicSignalHidesWarningNoticeButKeepsMetricVisible() {
+        val snapshot = DeviceHealthSnapshot.from(
+            device = SmartDevice(
+                id = "dev-001",
+                online = true,
+                lastSeenAt = "2026-07-18T11:59:30Z",
+                telemetry = SmartDeviceTelemetry(audioSignalQuality = "detected"),
+            ),
+            now = Instant.parse("2026-07-18T12:00:00Z"),
+        )
+
+        composeRule.setContent {
+            ShcareMobileTheme {
+                DeviceHealthPanel(
+                    snapshot = snapshot,
+                    isReleasing = false,
+                    mutationEnabled = true,
+                    onRelease = {},
+                )
+            }
+        }
+
+        composeRule.onAllNodesWithTag("device_health.signal_quality_notice").assertCountEquals(0)
+        composeRule.onNodeWithTag("device_health.metric.signal_quality")
+            .assertTextContains("Thu được tín hiệu")
+    }
 }

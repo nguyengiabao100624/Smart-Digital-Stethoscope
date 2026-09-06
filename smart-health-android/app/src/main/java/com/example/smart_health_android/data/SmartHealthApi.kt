@@ -4494,6 +4494,7 @@ class SmartHealthApi(
             otaStatus = json.optString("otaStatus"),
             audioStatus = json.optString("audioStatus"),
             connectionMethod = json.optString("connectionMethod"),
+            audioSignalQuality = json.optString("audioSignalQuality"),
         )
     }
 

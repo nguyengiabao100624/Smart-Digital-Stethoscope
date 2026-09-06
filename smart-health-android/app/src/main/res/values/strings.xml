@@ -607,6 +607,14 @@
     <string name="device_health_telemetry_support">Các giá trị dưới đây chỉ xuất hiện khi firmware đã báo lên máy chủ.</string>
     <string name="device_health_i2s">I2S / âm thanh</string>
     <string name="device_health_audio_status">Luồng âm thanh</string>
+    <string name="device_health_signal_quality">Chất lượng tín hiệu mic</string>
+    <string name="device_health_signal_quality_detected">Thu được tín hiệu</string>
+    <string name="device_health_signal_quality_too_weak">Tín hiệu quá yếu</string>
+    <string name="device_health_signal_quality_clipped">Tín hiệu bão hòa (méo)</string>
+    <string name="device_health_signal_quality_weak_title">Mic chưa thu được âm tim/phổi</string>
+    <string name="device_health_signal_quality_weak_message">Tín hiệu quá yếu để nhận diện nhịp tim hoặc tiếng phổi. Áp sát đầu nghe và giữ yên trong lúc đo; nếu vẫn yếu, kiểm tra dây và capsule mic.</string>
+    <string name="device_health_signal_quality_clipped_title">Tín hiệu mic bị bão hòa</string>
+    <string name="device_health_signal_quality_clipped_message">Âm thanh vượt ngưỡng thu nên có thể méo tiếng. Giảm áp lực đầu nghe hoặc tránh nguồn ồn lớn gần mic.</string>
     <string name="device_health_uptime">Thời gian hoạt động</string>
     <string name="device_health_free_heap">Bộ nhớ heap còn trống</string>
     <string name="device_health_packets_sent">Gói âm thanh đã gửi</string>

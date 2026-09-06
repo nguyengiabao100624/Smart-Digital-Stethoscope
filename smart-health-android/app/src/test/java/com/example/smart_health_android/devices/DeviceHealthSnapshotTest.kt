@@ -113,4 +113,74 @@ class DeviceHealthSnapshotTest {
         assertEquals(DevicePresenceStatus.Online, malformed.presence)
         assertEquals(DevicePresenceStatus.Online, missing.presence)
     }
+
+    @Test
+    fun weakAudioSignalQualitySurfacesForMicWarningsWithoutDowngradingPresence() {
+        val device = SmartDevice(
+            id = "dev-001",
+            online = true,
+            lastSeenAt = "2026-07-18T11:59:30Z",
+            telemetry = SmartDeviceTelemetry(audioSignalQuality = "too_weak"),
+        )
+
+        val snapshot = DeviceHealthSnapshot.from(device, now)
+
+        assertEquals("too_weak", snapshot.audioSignalQuality)
+        assertEquals(AudioSignalQuality.TooWeak, snapshot.audioSignalQualityKind)
+        assertEquals(DevicePresenceStatus.Online, snapshot.presence)
+    }
+
+    @Test
+    fun missingOrBlankAudioSignalQualityStaysUnknownWithoutInventingState() {
+        val blank = DeviceHealthSnapshot.from(
+            SmartDevice(
+                id = "dev-001",
+                online = true,
+                lastSeenAt = "2026-07-18T11:59:30Z",
+                telemetry = SmartDeviceTelemetry(audioSignalQuality = "   "),
+            ),
+            now,
+        )
+        val missing = DeviceHealthSnapshot.from(
+            SmartDevice(id = "dev-002", online = true, lastSeenAt = "2026-07-18T11:59:30Z"),
+            now,
+        )
+
+        assertNull(blank.audioSignalQuality)
+        assertNull(blank.audioSignalQualityKind)
+        assertNull(missing.audioSignalQuality)
+        assertNull(missing.audioSignalQualityKind)
+    }
+
+    @Test
+    fun audioSignalQualityWireValueIsNormalizedAcrossCaseAndWhitespace() {
+        val snapshot = DeviceHealthSnapshot.from(
+            SmartDevice(
+                id = "dev-001",
+                online = true,
+                lastSeenAt = "2026-07-18T11:59:30Z",
+                telemetry = SmartDeviceTelemetry(audioSignalQuality = " Clipped "),
+            ),
+            now,
+        )
+
+        assertEquals("Clipped", snapshot.audioSignalQuality)
+        assertEquals(AudioSignalQuality.Clipped, snapshot.audioSignalQualityKind)
+    }
+
+    @Test
+    fun unsupportedAudioSignalQualityValuesStayUnknownInsteadOfGuessing() {
+        val snapshot = DeviceHealthSnapshot.from(
+            SmartDevice(
+                id = "dev-001",
+                online = true,
+                lastSeenAt = "2026-07-18T11:59:30Z",
+                telemetry = SmartDeviceTelemetry(audioSignalQuality = "excellent"),
+            ),
+            now,
+        )
+
+        assertEquals("excellent", snapshot.audioSignalQuality)
+        assertNull(snapshot.audioSignalQualityKind)
+    }
 }

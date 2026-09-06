@@ -59,6 +59,25 @@ assert.doesNotMatch(
   /cloudSocket|sendAudioCloud|sendAudioUdp|sendCloud|connectCloud|handleCloud|WiFi\.|new\s|malloc\s*\(/,
 );
 
+const listenDsp = section(
+  "int16_t processListenSample(float x) {",
+  "int16_t processMetricSample(float x) {",
+);
+assert.match(
+  listenDsp,
+  /selectedAudioSignalState ==\s*shcare::AudioSlotSignalState::Detected/,
+  "noise-floor frames must not drive the biomedical compressor",
+);
+const agcAndPlotter = section(
+  "void updateAgcAndPlotter(int16_t listenAudio, int16_t metricAudio) {",
+  "std::uint32_t saturatingCounterAdd(",
+);
+assert.match(
+  agcAndPlotter,
+  /selectedAudioSignalState ==\s*shcare::AudioSlotSignalState::Detected/,
+  "noise-floor frames must not raise AGC gain",
+);
+
 const captureTask = section(
   "void audioCaptureTask(void *context) {",
   "bool startAudioCaptureTask() {",

@@ -919,48 +919,66 @@ AudioSessionContractDecision evaluateAudioSessionContract(
 AudioCaptureProfileDecision resolveAudioCaptureProfile(
     const std::string &profileName) {
   if (profileName == "heart") {
-    return {AudioCaptureProfile::Heart, 30.0f, 220.0f, 4.2f, true};
+    // Preserve the fundamental S1/S2 energy and use only one high-pass stage.
+    // A second stage at 30 Hz plus a 100 Hz notch made quiet contact signals
+    // sound thinner than the microphone's own noise floor.
+    return {AudioCaptureProfile::Heart, 25.0f, 250.0f, 4.5f, true,
+            6.0f, 0.12f, 1U, 2U, true, false};
   }
   if (profileName == "lung") {
-    return {AudioCaptureProfile::Lung, 80.0f, 2000.0f, 2.6f, false};
+    // Lung audio needs a much faster output smoother; the old heart-oriented
+    // alpha behaved like an unintended low-pass around a few hundred hertz.
+    return {AudioCaptureProfile::Lung, 80.0f, 2000.0f, 3.2f, false,
+            4.5f, 0.55f, 1U, 2U, false, false};
   }
   return {};
 }
 
-namespace {
-
-bool isUsableAudioSlot(const AudioSlotFrameStats &stats,
-                       std::size_t sampleCount) {
+AudioSlotSignalState classifyAudioSlotSignal(
+    const AudioSlotFrameStats &stats, std::size_t sampleCount) {
   if (sampleCount == 0 || stats.nonZeroSamples < sampleCount / 4U) {
-    return false;
+    return AudioSlotSignalState::TooWeak;
   }
   const std::uint32_t allowedClipped =
       static_cast<std::uint32_t>(sampleCount / 50U) + 1U;
   if (stats.clippedSamples > allowedClipped) {
-    return false;
+    return AudioSlotSignalState::Clipped;
   }
-  return stats.energy >= static_cast<std::uint64_t>(sampleCount) * 64ULL;
+  constexpr std::uint64_t kMinimumDetectedRms = 96ULL;
+  constexpr std::uint32_t kMinimumDetectedPeak = 256U;
+  const std::uint64_t minimumEnergy =
+      static_cast<std::uint64_t>(sampleCount) * kMinimumDetectedRms *
+      kMinimumDetectedRms;
+  if (stats.energy < minimumEnergy || stats.peak < kMinimumDetectedPeak) {
+    return AudioSlotSignalState::TooWeak;
+  }
+  return AudioSlotSignalState::Detected;
 }
-
-}  // namespace
 
 std::uint8_t selectAudioCaptureSlot(
     const AudioSlotFrameStats &slot0, const AudioSlotFrameStats &slot1,
     std::uint8_t currentSlot, std::size_t sampleCount) {
-  const bool slot0Usable = isUsableAudioSlot(slot0, sampleCount);
-  const bool slot1Usable = isUsableAudioSlot(slot1, sampleCount);
+  const AudioSlotSignalState slot0State =
+      classifyAudioSlotSignal(slot0, sampleCount);
+  const AudioSlotSignalState slot1State =
+      classifyAudioSlotSignal(slot1, sampleCount);
+  const bool slot0Usable = slot0State == AudioSlotSignalState::Detected;
+  const bool slot1Usable = slot1State == AudioSlotSignalState::Detected;
   if (slot0Usable != slot1Usable) {
     return slot0Usable ? 0U : 1U;
   }
 
+  const std::uint8_t stableCurrent = currentSlot == 1U ? 1U : 0U;
   if (!slot0Usable && !slot1Usable) {
-    if (slot0.clippedSamples != slot1.clippedSamples) {
-      return slot0.clippedSamples < slot1.clippedSamples ? 0U : 1U;
+    // A clipped input is worse than a quiet one. If both are merely below the
+    // contact-signal floor, retain the current slot instead of oscillating
+    // between whichever noise window happens to have more energy.
+    if (slot0State != slot1State) {
+      return slot0State == AudioSlotSignalState::Clipped ? 1U : 0U;
     }
-    return slot1.energy > slot0.energy ? 1U : 0U;
+    return stableCurrent;
   }
 
-  const std::uint8_t stableCurrent = currentSlot == 1U ? 1U : 0U;
   const AudioSlotFrameStats &current = stableCurrent == 0U ? slot0 : slot1;
   const AudioSlotFrameStats &candidate = stableCurrent == 0U ? slot1 : slot0;
   if (candidate.energy > current.energy &&

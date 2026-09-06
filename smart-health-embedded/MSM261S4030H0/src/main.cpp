@@ -620,6 +620,8 @@ I2sSlotDiagnostics i2sSlot0Diagnostics;
 I2sSlotDiagnostics i2sSlot1Diagnostics;
 std::uint8_t selectedAudioCaptureSlot = 0;
 std::uint32_t audioCaptureSlotSwitchCount = 0;
+shcare::AudioSlotSignalState selectedAudioSignalState =
+    shcare::AudioSlotSignalState::TooWeak;
 
 WiFiUDP audioUdp;
 IPAddress audioServerIp;
@@ -627,13 +629,12 @@ IPAddress audioServerIp;
 // =======================
 // Session-bound auscultation profiles
 // =======================
-// For listening to heart sounds through a stethoscope earpiece. This keeps the
-// main S1/S2 band while rejecting low rumble that sounds like wind.
-const bool ENABLE_HUM_NOTCH = true;
-const bool ENABLE_HUM_HARMONIC_NOTCH = true;
-const bool ENABLE_EXTRA_LOW_PASS_STAGE = true;
 const float HUM_NOTCH_Q = 35.0f;
 const float FILTER_Q = 0.70710678f;
+std::uint8_t activeHighPassStages = 1;
+std::uint8_t activeLowPassStages = 2;
+bool activeHumNotch50Enabled = true;
+bool activeHumNotch100Enabled = false;
 
 struct Biquad {
   float b0 = 1.0f;
@@ -763,7 +764,7 @@ const float noiseFloorFull = 30.0f;
 const float limiterThreshold = 18000.0f;
 const bool ENABLE_CLICK_TAMER = true;
 const float clickMaxStep = 700.0f;
-const float postSmoothAlpha = 0.085f;
+float outputSmoothingAlpha = 0.12f;
 
 const bool ENABLE_SOFT_COMPRESSOR = true;
 const float compressorFloorLevel = 0.12f;
@@ -785,10 +786,10 @@ float compressorGain = 1.0f;
 uint32_t compressorHoldCounter = 0;
 
 float agcGain = 1.0f;
-const float targetRms = 2500.0f;
+const float targetRms = 3200.0f;
 const float agcMin = 1.0f;
-const float agcMax = 1.18f;
-const int32_t agcActivityRms = 150;
+float agcMaxGain = 6.0f;
+int32_t agcActivityRms = 32;
 
 const float METRIC_LOW_CUT_HZ = 35.0f;
 const float METRIC_HIGH_CUT_HZ = 180.0f;
@@ -1164,6 +1165,19 @@ const char *activeAudioTransportLabel() {
     return shcare::cloudTransportLabel(cloudSecurityDecision.transport);
   }
   return udpAudioReady ? "UDP_DEVELOPMENT" : "DISABLED";
+}
+
+const char *audioSignalStateLabel(
+    shcare::AudioSlotSignalState state) {
+  switch (state) {
+  case shcare::AudioSlotSignalState::Detected:
+    return "detected";
+  case shcare::AudioSlotSignalState::Clipped:
+    return "clipped";
+  case shcare::AudioSlotSignalState::TooWeak:
+  default:
+    return "too_weak";
+  }
 }
 
 const char *i2sStatusLabel() {
@@ -3280,6 +3294,9 @@ String cloudTelemetryJson(const char *type) {
   json += "\"audioCaptureSlotSwitches\":";
   json += String(audioCaptureSlotSwitchCount);
   json += ",";
+  json += "\"audioSignalQuality\":\"";
+  json += audioSignalStateLabel(selectedAudioSignalState);
+  json += "\",";
   json += "\"i2sSlot0Rms\":";
   json += String(i2sSlot0Diagnostics.rms);
   json += ",";
@@ -5750,6 +5767,14 @@ void configureAudioProfile(
   activeAudioProfileName =
       profile.profile == shcare::AudioCaptureProfile::Lung ? "lung" : "heart";
   volumeGain = profile.listenGain;
+  agcMaxGain = profile.agcMaxGain;
+  outputSmoothingAlpha = profile.outputSmoothingAlpha;
+  activeHighPassStages = profile.highPassStages;
+  activeLowPassStages = profile.lowPassStages;
+  activeHumNotch50Enabled = profile.humNotch50Enabled;
+  activeHumNotch100Enabled = profile.humNotch100Enabled;
+  agcActivityRms =
+      profile.profile == shcare::AudioCaptureProfile::Lung ? 48 : 32;
   listenHighPass.setHighPass(profile.lowCutHz, FILTER_Q);
   listenHighPass2.setHighPass(profile.lowCutHz, FILTER_Q);
   humNotch50.setNotch(50.0f, HUM_NOTCH_Q);
@@ -5766,8 +5791,8 @@ void configureAudioProfile(
   Serial.print(" - ");
   Serial.print(profile.highCutHz);
   Serial.println(" Hz");
-  if (ENABLE_HUM_NOTCH && activeProfileUsesHeartMetrics) {
-    Serial.println(ENABLE_HUM_HARMONIC_NOTCH
+  if (activeHumNotch50Enabled) {
+    Serial.println(activeHumNotch100Enabled
                        ? "Hum notches ready: 50 Hz and 100 Hz"
                        : "Hum notch ready: 50 Hz");
   }
@@ -6113,16 +6138,20 @@ float preprocessRawSample(int32_t raw) {
 
 int16_t processListenSample(float x) {
   float y = listenHighPass.process(x);
-  y = listenHighPass2.process(y);
-  if (ENABLE_HUM_NOTCH && activeProfileUsesHeartMetrics) {
+  if (activeHighPassStages > 1U) {
+    y = listenHighPass2.process(y);
+  }
+  if (activeHumNotch50Enabled) {
     y = humNotch50.process(y);
-    if (ENABLE_HUM_HARMONIC_NOTCH) {
+    if (activeHumNotch100Enabled) {
       y = humNotch100.process(y);
     }
   }
   y = listenLowPass1.process(y);
-  y = listenLowPass2.process(y);
-  if (ENABLE_EXTRA_LOW_PASS_STAGE && activeProfileUsesHeartMetrics) {
+  if (activeLowPassStages > 1U) {
+    y = listenLowPass2.process(y);
+  }
+  if (activeLowPassStages > 2U) {
     y = listenLowPass3.process(y);
   }
 
@@ -6135,8 +6164,16 @@ int16_t processListenSample(float x) {
     y = applySoftNoiseFloor(y);
   }
 
-  if (ENABLE_SOFT_COMPRESSOR) {
+  const bool biologicalSignalDetected =
+      selectedAudioSignalState == shcare::AudioSlotSignalState::Detected;
+  if (ENABLE_SOFT_COMPRESSOR && biologicalSignalDetected) {
     y = applySoftCompressor(y);
+  } else {
+    // Preserve a quiet monitor path for placement diagnostics, but never let
+    // the adaptive compressor turn a stationary MEMS noise floor into loud
+    // fake heart/lung audio.
+    compressorActivity += 0.04f * (0.0f - compressorActivity);
+    compressorGain += 0.04f * (1.0f - compressorGain);
   }
 
   y *= volumeGain;
@@ -6152,7 +6189,7 @@ int16_t processListenSample(float x) {
     }
   }
 
-  outputSmooth += postSmoothAlpha * (y - outputSmooth);
+  outputSmooth += outputSmoothingAlpha * (y - outputSmooth);
 
   return clamp16((int32_t)outputSmooth);
 }
@@ -6250,18 +6287,22 @@ void updateAgcAndPlotter(int16_t listenAudio, int16_t metricAudio) {
       rms = sqrtf((float)plotSumSq / plotCount) * 8;
     }
 
-    if (rms > agcActivityRms && compressorActivity > 0.45f) {
+    const bool biologicalSignalDetected =
+        selectedAudioSignalState == shcare::AudioSlotSignalState::Detected;
+    if (biologicalSignalDetected && rms > agcActivityRms &&
+        compressorActivity > 0.45f) {
       float desiredGain = targetRms / (float)rms;
 
       if (desiredGain < agcMin)
         desiredGain = agcMin;
-      if (desiredGain > agcMax)
-        desiredGain = agcMax;
+      if (desiredGain > agcMaxGain)
+        desiredGain = agcMaxGain;
 
-      const float agcAlpha = desiredGain < agcGain ? 0.14f : 0.025f;
+      const float agcAlpha = desiredGain < agcGain ? 0.18f : 0.10f;
       agcGain += agcAlpha * (desiredGain - agcGain);
     } else if (agcGain > agcMin) {
-      agcGain += 0.035f * (agcMin - agcGain);
+      const float releaseAlpha = biologicalSignalDetected ? 0.035f : 0.18f;
+      agcGain += releaseAlpha * (agcMin - agcGain);
     }
 
     Serial.print(">wave:");
@@ -6345,6 +6386,9 @@ void updateAgcAndPlotter(int16_t listenAudio, int16_t metricAudio) {
     Serial.print(">audioCaptureSlotSwitches:");
     Serial.println(audioCaptureSlotSwitchCount);
 
+    Serial.print(">audioSignalQuality:");
+    Serial.println(audioSignalStateLabel(selectedAudioSignalState));
+
     plotPeak = 0;
     rawPeak = 0;
     filteredPeak = 0;
@@ -6393,13 +6437,17 @@ void updateI2sSlotDiagnostics(const int32_t *interleavedSamples,
     }
 
     I2sSlotDiagnostics &diagnostics = *slots[slotIndex];
-    diagnostics.rms = static_cast<std::uint32_t>(
+    const std::uint32_t frameRms = static_cast<std::uint32_t>(
         sqrtf(static_cast<float>(sumSquares / frameCount)));
+    diagnostics.rms = frameRms;
     diagnostics.peak = peak;
     diagnostics.windowCount =
         saturatingCounterAdd(diagnostics.windowCount, 1);
+    // Do not count the MEMS noise floor as an active biological-signal
+    // window. This threshold matches the slot classifier used for capture.
+    const bool signalDetected = frameRms >= 96U && peak >= 256U;
     diagnostics.activeWindowCount = saturatingCounterAdd(
-        diagnostics.activeWindowCount, peak > 0 ? 1 : 0);
+        diagnostics.activeWindowCount, signalDetected ? 1U : 0U);
     diagnostics.sampleCount = saturatingCounterAdd(
         diagnostics.sampleCount, static_cast<std::uint32_t>(frameCount));
     diagnostics.nonZeroSampleCount = saturatingCounterAdd(
@@ -6458,6 +6506,9 @@ void captureI2sFrame() {
         ++audioCaptureSlotSwitchCount;
       }
     }
+    selectedAudioSignalState = shcare::classifyAudioSlotSignal(
+        selectedAudioCaptureSlot == 0U ? slot0Stats : slot1Stats,
+        static_cast<std::size_t>(samplesRead));
 
     AudioCaptureItem item;
     item.sampleCount = static_cast<std::uint16_t>(samplesRead);

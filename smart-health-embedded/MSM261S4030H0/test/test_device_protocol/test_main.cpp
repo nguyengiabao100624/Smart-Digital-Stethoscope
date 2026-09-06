@@ -1122,8 +1122,14 @@ void test_audio_capture_profiles_are_explicit_and_bounded() {
   const auto heart = shcare::resolveAudioCaptureProfile("heart");
   TEST_ASSERT_TRUE(heart.accepted());
   TEST_ASSERT_EQUAL(shcare::AudioCaptureProfile::Heart, heart.profile);
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 30.0f, heart.lowCutHz);
-  TEST_ASSERT_FLOAT_WITHIN(0.01f, 220.0f, heart.highCutHz);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 25.0f, heart.lowCutHz);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 250.0f, heart.highCutHz);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 6.0f, heart.agcMaxGain);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.12f, heart.outputSmoothingAlpha);
+  TEST_ASSERT_EQUAL_UINT8(1, heart.highPassStages);
+  TEST_ASSERT_EQUAL_UINT8(2, heart.lowPassStages);
+  TEST_ASSERT_TRUE(heart.humNotch50Enabled);
+  TEST_ASSERT_FALSE(heart.humNotch100Enabled);
   TEST_ASSERT_TRUE(heart.heartMetricsEnabled);
 
   const auto lung = shcare::resolveAudioCaptureProfile("lung");
@@ -1131,6 +1137,12 @@ void test_audio_capture_profiles_are_explicit_and_bounded() {
   TEST_ASSERT_EQUAL(shcare::AudioCaptureProfile::Lung, lung.profile);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 80.0f, lung.lowCutHz);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 2000.0f, lung.highCutHz);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 4.5f, lung.agcMaxGain);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.55f, lung.outputSmoothingAlpha);
+  TEST_ASSERT_EQUAL_UINT8(1, lung.highPassStages);
+  TEST_ASSERT_EQUAL_UINT8(2, lung.lowPassStages);
+  TEST_ASSERT_FALSE(lung.humNotch50Enabled);
+  TEST_ASSERT_FALSE(lung.humNotch100Enabled);
   TEST_ASSERT_FALSE(lung.heartMetricsEnabled);
 
   const auto unsupported = shcare::resolveAudioCaptureProfile("raw");
@@ -1154,6 +1166,26 @@ void test_audio_slot_selection_avoids_weak_and_clipped_channels() {
   shcare::AudioSlotFrameStats nearCandidate{1200000ULL, 3900U, 128U, 0U};
   TEST_ASSERT_EQUAL_UINT8(
       0, shcare::selectAudioCaptureSlot(nearCurrent, nearCandidate, 0, 128));
+
+  shcare::AudioSlotFrameStats noise0{320000ULL, 163U, 128U, 0U};
+  shcare::AudioSlotFrameStats noise1{540000ULL, 190U, 128U, 0U};
+  TEST_ASSERT_EQUAL(shcare::AudioSlotSignalState::TooWeak,
+                    shcare::classifyAudioSlotSignal(noise0, 128));
+  TEST_ASSERT_EQUAL(shcare::AudioSlotSignalState::TooWeak,
+                    shcare::classifyAudioSlotSignal(noise1, 128));
+  TEST_ASSERT_EQUAL_UINT8(
+      0, shcare::selectAudioCaptureSlot(noise0, noise1, 0, 128));
+  TEST_ASSERT_EQUAL_UINT8(
+      1, shcare::selectAudioCaptureSlot(noise0, noise1, 1, 128));
+
+  shcare::AudioSlotFrameStats quietBiologicalSignal{
+      4500000ULL, 720U, 128U, 0U};
+  TEST_ASSERT_EQUAL(shcare::AudioSlotSignalState::Detected,
+                    shcare::classifyAudioSlotSignal(
+                        quietBiologicalSignal, 128));
+  TEST_ASSERT_EQUAL_UINT8(
+      1, shcare::selectAudioCaptureSlot(
+             noise0, quietBiologicalSignal, 0, 128));
 }
 
 void test_builds_audio_v2_frame_in_network_byte_order() {

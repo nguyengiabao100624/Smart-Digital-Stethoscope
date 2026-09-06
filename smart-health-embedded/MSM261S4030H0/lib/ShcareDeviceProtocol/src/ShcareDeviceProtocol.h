@@ -299,18 +299,36 @@ struct AudioCaptureProfileDecision {
   AudioCaptureProfileDecision(AudioCaptureProfile nextProfile,
                               float nextLowCutHz, float nextHighCutHz,
                               float nextListenGain,
-                              bool nextHeartMetricsEnabled)
+                              bool nextHeartMetricsEnabled,
+                              float nextAgcMaxGain,
+                              float nextOutputSmoothingAlpha,
+                              std::uint8_t nextHighPassStages,
+                              std::uint8_t nextLowPassStages,
+                              bool nextHumNotch50Enabled,
+                              bool nextHumNotch100Enabled)
       : profile(nextProfile),
         lowCutHz(nextLowCutHz),
         highCutHz(nextHighCutHz),
         listenGain(nextListenGain),
-        heartMetricsEnabled(nextHeartMetricsEnabled) {}
+        heartMetricsEnabled(nextHeartMetricsEnabled),
+        agcMaxGain(nextAgcMaxGain),
+        outputSmoothingAlpha(nextOutputSmoothingAlpha),
+        highPassStages(nextHighPassStages),
+        lowPassStages(nextLowPassStages),
+        humNotch50Enabled(nextHumNotch50Enabled),
+        humNotch100Enabled(nextHumNotch100Enabled) {}
 
   AudioCaptureProfile profile = AudioCaptureProfile::Unsupported;
   float lowCutHz = 0.0f;
   float highCutHz = 0.0f;
   float listenGain = 1.0f;
   bool heartMetricsEnabled = false;
+  float agcMaxGain = 1.0f;
+  float outputSmoothingAlpha = 1.0f;
+  std::uint8_t highPassStages = 1;
+  std::uint8_t lowPassStages = 1;
+  bool humNotch50Enabled = false;
+  bool humNotch100Enabled = false;
 
   bool accepted() const {
     return profile != AudioCaptureProfile::Unsupported;
@@ -335,6 +353,15 @@ struct AudioSlotFrameStats {
   std::uint32_t nonZeroSamples = 0;
   std::uint32_t clippedSamples = 0;
 };
+
+enum class AudioSlotSignalState {
+  TooWeak,
+  Detected,
+  Clipped,
+};
+
+AudioSlotSignalState classifyAudioSlotSignal(
+    const AudioSlotFrameStats &stats, std::size_t sampleCount);
 
 std::uint8_t selectAudioCaptureSlot(
     const AudioSlotFrameStats &slot0, const AudioSlotFrameStats &slot1,

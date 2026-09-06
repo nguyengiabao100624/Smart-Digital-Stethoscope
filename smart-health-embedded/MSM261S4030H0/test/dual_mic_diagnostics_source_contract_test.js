@@ -36,14 +36,16 @@ function summarizeWindow(samples, previous) {
     windowCount: saturatingAdd(previous.windowCount, 1),
     activeWindowCount: saturatingAdd(
       previous.activeWindowCount,
-      peak > 0 ? 1 : 0,
+      Math.floor(Math.sqrt(sumSquares / samples.length)) >= 96 && peak >= 256
+        ? 1
+        : 0,
     ),
     sampleCount: saturatingAdd(previous.sampleCount, samples.length),
     nonZeroSampleCount: saturatingAdd(previous.nonZeroSampleCount, nonZero),
   };
 }
 
-assert.equal(fixture.version, 1);
+assert.equal(fixture.version, 2);
 let slot0 = {
   rms: 0,
   peak: 0,
@@ -102,6 +104,7 @@ assert.match(diagnostics, /saturatingCounterAdd/);
 assert.match(diagnostics, /sqrtf/);
 assert.match(diagnostics, /sumSquares/);
 assert.match(diagnostics, /nonZeroSampleCount/);
+assert.match(diagnostics, /frameRms >= 96U && peak >= 256U/);
 assert.match(capture, /updateI2sSlotDiagnostics\(micBuffer, samplesRead\)/);
 assert.match(captureTask, /captureI2sFrame\(\)/);
 assert.doesNotMatch(runtimeLoop, /captureI2sFrame\(\)/);
@@ -115,6 +118,7 @@ assert.doesNotMatch(capture, /rawMixed/);
 assert.match(source, /Auscultation profile ready:/);
 assert.match(source, /audioProfile/);
 assert.match(source, /audioCaptureSlot/);
+assert.match(source, /audioSignalQuality/);
 
 for (const label of [
   ">i2sSlot0Rms:",

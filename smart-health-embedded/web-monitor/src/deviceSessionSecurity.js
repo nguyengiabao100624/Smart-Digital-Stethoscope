@@ -117,6 +117,7 @@ const DEVICE_TELEMETRY_STRING_FIELDS = new Set([
   "resetReason",
   "i2sStatus",
   "audioProfile",
+  "audioSignalQuality",
   "lastCommandId",
   "lastCommandState",
   "lastCommandCode",
@@ -150,6 +151,12 @@ function sanitizeDeviceTelemetry(value) {
   }
   if (sanitized.audioProfile && !["heart", "lung"].includes(sanitized.audioProfile)) {
     delete sanitized.audioProfile;
+  }
+  if (
+    sanitized.audioSignalQuality &&
+    !["too_weak", "detected", "clipped"].includes(sanitized.audioSignalQuality)
+  ) {
+    delete sanitized.audioSignalQuality;
   }
   if (sanitized.audioCaptureSlot !== undefined && ![0, 1].includes(sanitized.audioCaptureSlot)) {
     delete sanitized.audioCaptureSlot;

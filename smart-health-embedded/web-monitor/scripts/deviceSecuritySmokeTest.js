@@ -1673,6 +1673,7 @@ test("device telemetry is allowlisted and persisted as a safe JSON/SQL snapshot"
     resetReason: " brownout ",
     i2sStatus: "ready",
     audioProfile: "lung",
+    audioSignalQuality: "detected",
     audioCaptureSlot: 1,
     audioCaptureSlotSwitches: 3,
     lastCommandId: "cmd_123",
@@ -1717,6 +1718,7 @@ test("device telemetry is allowlisted and persisted as a safe JSON/SQL snapshot"
     resetReason: "brownout",
     i2sStatus: "ready",
     audioProfile: "lung",
+    audioSignalQuality: "detected",
     audioCaptureSlot: 1,
     audioCaptureSlotSwitches: 3,
     lastCommandId: "cmd_123",
@@ -1757,6 +1759,7 @@ test("device telemetry is allowlisted and persisted as a safe JSON/SQL snapshot"
     );
   }
   assert.deepEqual(sanitizeDeviceTelemetry({ audioProfile: "raw" }), {});
+  assert.deepEqual(sanitizeDeviceTelemetry({ audioSignalQuality: "noise" }), {});
   assert.deepEqual(sanitizeDeviceTelemetry({ wifiRssi: -128 }), {});
   assert.deepEqual(sanitizeDeviceTelemetry({ wifiRssi: 1 }), {});
   assert.deepEqual(sanitizeDeviceTelemetry({ wifiRssi: "-57" }), {});

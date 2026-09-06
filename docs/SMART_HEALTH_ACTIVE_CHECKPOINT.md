@@ -2,11 +2,12 @@
 
 ## 2026-09-06 Codex continuation after Claude takeover
 
-- Claude's takeover work is present as six focused commits `afbf1d5d..2635a8b7` on local `main` (currently ahead of `origin/main`). The white Android light canvas, ChatGPT-style Shcare composer, dual-mic DSP classification/gated AGC, backend `audioSignalQuality` allowlist, Android mic-quality notice and Gradle/AGP upgrade are committed; unrelated untracked user files remain untouched.
+- Claude's takeover work is present as six focused commits `afbf1d5d..2635a8b7`, followed by Codex verification commit `fd485656`; `main` is synchronized with `origin/main`. The white Android light canvas, ChatGPT-style Shcare composer, dual-mic DSP classification/gated AGC, backend `audioSignalQuality` allowlist, Android mic-quality notice and Gradle/AGP upgrade are committed; unrelated untracked user files remain untouched.
 - Codex closed the one unfinished physical Compose assertion from the Claude session and reran both relevant suites on Xiaomi `21081111RG`: `DeviceHealthPanelTest` plus `AIAssistantScreenTest` are **10/10 PASS**. The rebuilt debug APK was installed successfully; artifact is `48,793,374` bytes, SHA-256 `A1483FF6693ADDF378CB880B465C76CE382FF59F3183B11EBADECB8C6F4E8C6D`.
 - Fresh aggregate gates are Android JVM `124` suites / `893/893`, lint `0` actionable issues, assemble plus androidTest compile PASS; firmware source/golden contracts `4/4`; backend device-security smoke `65/65`. The previously untracked `AIAssistantComposerContractTest` is now part of the focused continuation slice.
 - Fresh bounded COM9 serial evidence shows the board joins Wi-Fi and reaches `Cloud device authentication accepted over WSS`. Both I2S slots emit data, but after boot transients settle their RMS is mostly only `15-65`; firmware correctly reports steady `audioSignalQuality:too_weak` and does not apply aggressive AGC to that noise floor.
 - Therefore UI/telemetry truthfulness and cloud transport are PASS, but **clear heart/lung acoustic capture is still OPEN**. No software gain change can substitute for physical acoustic coupling and a verified capsule/SEL/CHIPEN/shared-SD path. G3 remains PARTIAL and G4 remains gated; approved AI provider plus signed OTA/rollback proof also remain open.
+- Render service `shcare-api-prod` in the replacement account auto-deployed `fd48565608cd6c2f0843d74604ae6bd39cbb5d4e` successfully. Public `GET /api/v1/health` returns `200` and release marker `fd48565608cd`; exact Admin/Portal origins receive their own CORS allow-origin header while an unknown origin receives none. Render startup logs show PostgreSQL state loaded, production Firebase auth enabled and no deploy error.
 
 ## 2026-09-06 mic signal-quality warning and session-takeover checkpoint
 

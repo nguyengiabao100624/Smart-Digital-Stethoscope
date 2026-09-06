@@ -258,10 +258,7 @@
     <string name="ai_assistant_unavailable_message">Bạn vẫn có thể xem lịch sử, nhập nội dung, đính kèm tệp và dùng micro. Gửi câu hỏi sẽ được mở khi quản trị viên cấu hình mô hình AI trên máy chủ.</string>
     <string name="ai_assistant_provider_send_disabled">Chưa thể gửi: máy chủ chưa được cấu hình mô hình AI.</string>
     <string name="ai_assistant_load_error_title">Không thể tải lịch sử AI</string>
-    <string name="ai_assistant_input_label">Câu hỏi về dữ liệu đo</string>
-    <string name="ai_assistant_input_hint">Nhập câu hỏi cần hỗ trợ phân tích</string>
     <string name="ai_assistant_send">Gửi câu hỏi</string>
-    <string name="ai_assistant_sending">Đang chờ máy chủ xác nhận</string>
     <string name="ai_assistant_send_error">Câu hỏi chưa được máy chủ xác nhận</string>
     <string name="ai_assistant_message_user">Bạn</string>
     <string name="ai_assistant_message_assistant">Shcare AI</string>

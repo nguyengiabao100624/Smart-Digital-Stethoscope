@@ -72,7 +72,7 @@ class AIAssistantScreenTest {
         composeRule.onNodeWithTag("ai_assistant.empty").assertIsDisplayed()
         composeRule.onNodeWithTag("ai_assistant.composer").assertIsDisplayed()
         composeRule.onNodeWithTag("ai_assistant.input").assertIsDisplayed()
-        composeRule.onNodeWithTag("ai_assistant.send", useUnmergedTree = true)
+        composeRule.onNodeWithTag("ai_assistant.voice_mode", useUnmergedTree = true)
             .assertHeightIsAtLeast(48.dp)
         composeRule.onNodeWithTag("ai_assistant.history", useUnmergedTree = true)
             .assertIsDisplayed()
@@ -95,7 +95,27 @@ class AIAssistantScreenTest {
         composeRule.onNodeWithTag("ai_assistant.composer").assertIsDisplayed()
         composeRule.onNodeWithTag("ai_assistant.input").assertIsDisplayed()
         composeRule.onNodeWithTag("ai_assistant.voice", useUnmergedTree = true).assertIsDisplayed()
-        composeRule.onNodeWithTag("ai_assistant.send", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("ai_assistant.voice_mode", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun addButtonOpensTheImplementedAttachmentActions() {
+        val viewModel = AiChatViewModel(EmptyAvailableRepository)
+
+        composeRule.setContent {
+            ShcareMobileTheme(mode = ShcareThemeMode.Light, useDynamicColor = false) {
+                AIAssistantScreen(onNavigateBack = {}, viewModel = viewModel)
+            }
+        }
+
+        composeRule.waitUntil(timeoutMillis = 5_000L) {
+            viewModel.uiState.value.availability.available
+        }
+        composeRule.onNodeWithTag("ai_assistant.attach", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithTag("ai_assistant.attachment_menu").assertIsDisplayed()
+        composeRule.onNodeWithText("Camera").assertIsDisplayed()
+        composeRule.onNodeWithText("Ảnh").assertIsDisplayed()
+        composeRule.onNodeWithText("Tệp").assertIsDisplayed()
     }
 
     @Test
@@ -150,7 +170,7 @@ class AIAssistantScreenTest {
         }
         composeRule.onNodeWithTag("ai_assistant.voice", useUnmergedTree = true).performClick()
         composeRule.onNodeWithTag("ai_assistant.waveform").assertIsDisplayed()
-        composeRule.onNodeWithTag("ai_assistant.voice", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithTag("ai_assistant.voice_stop", useUnmergedTree = true).performClick()
 
         composeRule.waitUntil(timeoutMillis = 5_000L) {
             viewModel.uiState.value.input == "Nhịp tim nghe đều" && !transcriber.recording

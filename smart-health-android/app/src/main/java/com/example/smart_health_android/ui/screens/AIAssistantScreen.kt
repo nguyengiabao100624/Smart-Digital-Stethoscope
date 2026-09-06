@@ -1,10 +1,15 @@
 package com.example.smart_health_android.ui.screens
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,18 +26,24 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
@@ -44,9 +55,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -65,6 +76,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -114,6 +126,27 @@ private fun InputStream.readAiAttachmentBytes(): ByteArray {
     return output.toByteArray()
 }
 
+private fun readLocalAiAttachment(
+    context: Context,
+    uri: Uri,
+    fallbackName: String,
+): LocalAiAttachment {
+    val resolver = context.contentResolver
+    val name = resolver.query(
+        uri,
+        arrayOf(OpenableColumns.DISPLAY_NAME),
+        null,
+        null,
+        null,
+    )?.use { cursor ->
+        if (cursor.moveToFirst()) cursor.getString(0) else null
+    }.orEmpty().ifBlank { fallbackName }
+    val contentType = resolver.getType(uri).orEmpty().ifBlank { "application/octet-stream" }
+    val bytes = resolver.openInputStream(uri)?.use(InputStream::readAiAttachmentBytes)
+        ?: error("Không đọc được tệp đã chọn")
+    return LocalAiAttachment(name = name, contentType = contentType, bytes = bytes)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AIAssistantScreen(
@@ -130,6 +163,7 @@ fun AIAssistantScreen(
     val scope = rememberCoroutineScope()
     var isRecording by remember { mutableStateOf(false) }
     var voiceStatus by remember { mutableStateOf("") }
+    var showAttachmentMenu by remember { mutableStateOf(false) }
     val amplitudes = remember { mutableStateListOf<Int>().apply { repeat(28) { add(4) } } }
     val currentInput by rememberUpdatedState(state.input)
     val currentAction by rememberUpdatedState(viewModel::onAction)
@@ -192,10 +226,70 @@ fun AIAssistantScreen(
         }
     }
 
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    readLocalAiAttachment(context, uri, "anh-dinh-kem")
+                }
+            }.onSuccess { currentAction(AiChatUiAction.AttachmentSelected(it)) }
+                .onFailure { voiceStatus = it.message.orEmpty() }
+        }
+    }
+
+    val cameraCapture = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicturePreview(),
+    ) { bitmap ->
+        if (bitmap == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.Default) {
+                    val output = ByteArrayOutputStream()
+                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 92, output)) {
+                        "Không thể xử lý ảnh camera"
+                    }
+                    val bytes = output.toByteArray()
+                    require(bytes.size <= AI_ATTACHMENT_LIMIT_BYTES) {
+                        "Ảnh vượt quá giới hạn 10 MB"
+                    }
+                    LocalAiAttachment(
+                        name = "anh-camera-${System.currentTimeMillis()}.jpg",
+                        contentType = "image/jpeg",
+                        bytes = bytes,
+                    )
+                }
+            }.onSuccess { currentAction(AiChatUiAction.AttachmentSelected(it)) }
+                .onFailure { voiceStatus = it.message.orEmpty() }
+        }
+    }
+
     if (state.isHistoryVisible) {
         ModalBottomSheet(onDismissRequest = { viewModel.onAction(AiChatUiAction.ToggleHistory) }) {
             ConversationHistory(state = state, onAction = viewModel::onAction)
         }
+    }
+
+    if (showAttachmentMenu) {
+        AiAttachmentMenu(
+            onDismiss = { showAttachmentMenu = false },
+            onCamera = {
+                showAttachmentMenu = false
+                cameraCapture.launch(null)
+            },
+            onImage = {
+                showAttachmentMenu = false
+                imagePicker.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                )
+            },
+            onFile = {
+                showAttachmentMenu = false
+                attachmentPicker.launch(arrayOf("application/pdf", "text/plain", "audio/*"))
+            },
+        )
     }
 
     val composerVisible = state.loadState !in setOf(AiChatLoadState.Loading, AiChatLoadState.Error)
@@ -226,7 +320,13 @@ fun AIAssistantScreen(
                     isRecording = isRecording,
                     voiceStatus = voiceStatus,
                     amplitudes = amplitudes,
-                    onAttach = { attachmentPicker.launch(arrayOf("image/*", "application/pdf", "text/plain", "audio/*")) },
+                    onAttach = { showAttachmentMenu = true },
+                    onCancelVoice = {
+                        speechTranscriber.cancel()
+                        isRecording = false
+                        voiceStatus = "Đã hủy ghi âm"
+                        amplitudes.indices.forEach { index -> amplitudes[index] = 4 }
+                    },
                     onVoice = {
                         if (isRecording) {
                             voiceStatus = "Đang hoàn tất nhận dạng…"
@@ -472,6 +572,74 @@ private fun AiMessageBubble(message: AiChatMessage, attachments: List<AiChatAtta
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AiAttachmentMenu(
+    onDismiss: () -> Unit,
+    onCamera: () -> Unit,
+    onImage: () -> Unit,
+    onFile: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .testTag("ai_assistant.attachment_menu"),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text("Thêm vào cuộc trò chuyện", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Chọn nội dung cần gửi cho Shcare AI.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            AiAttachmentMenuItem(
+                label = "Camera",
+                icon = { Icon(Icons.Default.CameraAlt, contentDescription = null) },
+                onClick = onCamera,
+            )
+            AiAttachmentMenuItem(
+                label = "Ảnh",
+                icon = { Icon(Icons.Default.Image, contentDescription = null) },
+                onClick = onImage,
+            )
+            AiAttachmentMenuItem(
+                label = "Tệp",
+                icon = { Icon(Icons.Default.AttachFile, contentDescription = null) },
+                onClick = onFile,
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun AiAttachmentMenuItem(
+    label: String,
+    icon: @Composable () -> Unit,
+    onClick: () -> Unit,
+) {
+    ListItem(
+        headlineContent = { Text(label, style = MaterialTheme.typography.titleMedium) },
+        leadingContent = {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.size(48.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) { icon() }
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = 64.dp)
+            .clickable(onClick = onClick),
+    )
+}
+
 @Composable
 private fun AiChatComposer(
     state: AiChatUiState,
@@ -480,14 +648,23 @@ private fun AiChatComposer(
     voiceStatus: String,
     amplitudes: List<Int>,
     onAttach: () -> Unit,
+    onCancelVoice: () -> Unit,
     onVoice: () -> Unit,
     onAction: (AiChatUiAction) -> Unit,
 ) {
     Surface(
-        tonalElevation = 3.dp,
-        modifier = Modifier.fillMaxWidth().imePadding().navigationBarsPadding().testTag("ai_assistant.composer"),
+        color = MaterialTheme.colorScheme.background,
+        tonalElevation = 0.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .imePadding()
+            .navigationBarsPadding()
+            .testTag("ai_assistant.composer"),
     ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             if (state.selectedAttachmentIds.isNotEmpty()) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(state.attachments.filter { it.id in state.selectedAttachmentIds }, key = { it.id }) { attachment ->
@@ -500,67 +677,197 @@ private fun AiChatComposer(
                     }
                 }
             }
-            if (isRecording || voiceStatus.isNotBlank()) {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        VoiceWaveform(amplitudes, isRecording)
-                        Text(voiceStatus, style = MaterialTheme.typography.labelMedium, maxLines = 2)
+
+            Surface(
+                shape = RoundedCornerShape(30.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                tonalElevation = 2.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 60.dp)
+                    .testTag("ai_assistant.composer_shell"),
+            ) {
+                if (isRecording) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 6.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        IconButton(
+                            onClick = onCancelVoice,
+                            modifier = Modifier
+                                .defaultMinSize(48.dp, 48.dp)
+                                .testTag("ai_assistant.voice_cancel"),
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Hủy ghi âm")
+                        }
+                        VoiceWaveform(
+                            levels = amplitudes,
+                            active = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            IconButton(
+                                onClick = onVoice,
+                                enabled = !state.isSending,
+                                modifier = Modifier.testTag("ai_assistant.voice_stop"),
+                            ) {
+                                Icon(
+                                    Icons.Default.Stop,
+                                    contentDescription = "Dừng và chép lời",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 6.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        IconButton(
+                            onClick = onAttach,
+                            enabled = !state.isSending && !state.isUploading,
+                            modifier = Modifier
+                                .defaultMinSize(48.dp, 48.dp)
+                                .testTag("ai_assistant.attach"),
+                        ) {
+                            if (state.isUploading) {
+                                CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.Add, contentDescription = "Thêm ảnh hoặc tệp")
+                            }
+                        }
+
+                        BasicTextField(
+                            value = state.input,
+                            onValueChange = { onAction(AiChatUiAction.InputChanged(it)) },
+                            enabled = !state.isSending,
+                            minLines = 1,
+                            maxLines = 5,
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                color = MaterialTheme.colorScheme.onSurface,
+                            ),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            modifier = Modifier
+                                .weight(1f)
+                                .widthIn(min = 72.dp)
+                                .padding(vertical = 10.dp)
+                                .testTag("ai_assistant.input"),
+                            decorationBox = { innerTextField ->
+                                Box(contentAlignment = Alignment.CenterStart) {
+                                    if (state.input.isBlank()) {
+                                        Text(
+                                            text = "Hỏi Shcare AI",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            },
+                        )
+
+                        IconButton(
+                            onClick = onVoice,
+                            enabled = !state.isSending,
+                            modifier = Modifier
+                                .defaultMinSize(48.dp, 48.dp)
+                                .testTag("ai_assistant.voice"),
+                        ) {
+                            Icon(Icons.Default.Mic, contentDescription = "Nhập bằng giọng nói")
+                        }
+
+                        val sendEnabled = canSend &&
+                            state.input.isNotBlank() &&
+                            !state.isSending &&
+                            !state.isUploading
+                        Surface(
+                            shape = CircleShape,
+                            color = if (state.input.isBlank()) {
+                                MaterialTheme.colorScheme.primary
+                            } else if (sendEnabled) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            },
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            if (state.input.isBlank()) {
+                                IconButton(
+                                    onClick = onVoice,
+                                    enabled = !state.isSending,
+                                    modifier = Modifier.testTag("ai_assistant.voice_mode"),
+                                ) {
+                                    Icon(
+                                        Icons.Default.GraphicEq,
+                                        contentDescription = "Bắt đầu ghi âm",
+                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                    )
+                                }
+                            } else {
+                                IconButton(
+                                    onClick = { onAction(AiChatUiAction.Send) },
+                                    enabled = sendEnabled,
+                                    modifier = Modifier.testTag("ai_assistant.send"),
+                                ) {
+                                    if (state.isSending) {
+                                        CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                                    } else {
+                                        Icon(
+                                            Icons.Default.ArrowUpward,
+                                            contentDescription = stringResource(R.string.ai_assistant_send),
+                                            tint = if (sendEnabled) {
+                                                MaterialTheme.colorScheme.onPrimary
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
-            OutlinedTextField(
-                value = state.input,
-                onValueChange = { onAction(AiChatUiAction.InputChanged(it)) },
-                placeholder = { Text(stringResource(R.string.ai_assistant_input_hint)) },
-                enabled = !state.isSending,
-                minLines = 1,
-                maxLines = 5,
-                modifier = Modifier.fillMaxWidth().testTag("ai_assistant.input"),
-            )
+
+            if (voiceStatus.isNotBlank()) {
+                Text(
+                    text = voiceStatus,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (isRecording) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = 2,
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+            }
             if (!canSend) {
                 Text(
                     text = stringResource(R.string.ai_assistant_provider_send_disabled),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 12.dp),
                 )
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(
-                    onClick = onAttach,
-                    enabled = !state.isSending && !state.isUploading,
-                    modifier = Modifier.testTag("ai_assistant.attach"),
-                ) {
-                    if (state.isUploading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                    else Icon(Icons.Default.AttachFile, contentDescription = "Thêm hình hoặc tệp")
-                }
-                IconButton(
-                    onClick = onVoice,
-                    enabled = !state.isSending,
-                    modifier = Modifier.testTag("ai_assistant.voice"),
-                ) {
-                    Icon(if (isRecording) Icons.Default.Stop else Icons.Default.Mic, contentDescription = if (isRecording) "Dừng ghi âm" else "Nhập bằng giọng nói")
-                }
-                Spacer(Modifier.weight(1f))
-                Surface(
-                    shape = CircleShape,
-                    color = if (canSend && state.input.isNotBlank() && !state.isSending) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.defaultMinSize(48.dp, 48.dp),
-                ) {
-                    IconButton(
-                        onClick = { onAction(AiChatUiAction.Send) },
-                        enabled = canSend && state.input.isNotBlank() && !state.isSending && !state.isUploading,
-                        modifier = Modifier.testTag("ai_assistant.send"),
-                    ) {
-                        if (state.isSending) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                        else Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.ai_assistant_send))
-                    }
-                }
             }
             if (state.errorMessage.isNotBlank() || state.errorMessageRes != null) {
                 Text(
                     text = state.errorMessage.ifBlank { stringResource(R.string.ai_assistant_send_error) },
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 12.dp),
                 )
             }
         }
@@ -568,10 +875,14 @@ private fun AiChatComposer(
 }
 
 @Composable
-private fun VoiceWaveform(levels: List<Int>, active: Boolean) {
+private fun VoiceWaveform(
+    levels: List<Int>,
+    active: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
     Canvas(
-        modifier = Modifier.fillMaxWidth().height(38.dp).testTag("ai_assistant.waveform").semantics {
+        modifier = modifier.fillMaxWidth().height(38.dp).testTag("ai_assistant.waveform").semantics {
             contentDescription = if (active) "Sóng âm đang ghi" else "Sóng âm đã dừng"
         },
     ) {

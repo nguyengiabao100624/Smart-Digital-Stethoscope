@@ -96,6 +96,22 @@ class PrimaryScreenThemeContractTest {
     }
 
     @Test
+    fun lightThemeUsesAWhiteApplicationCanvas() {
+        val themeSource = projectFile(
+            "src/main/java/com/example/smart_health_android/ui/theme/Theme.kt",
+        ).readText()
+
+        assertTrue(
+            "The light app canvas must be white on every screen",
+            Regex("""background\s*=\s*Color\.White""").containsMatchIn(themeSource),
+        )
+        assertFalse(
+            "The retired grey app canvas must not return",
+            themeSource.contains("background = Color(0xFFF5F7FA)"),
+        )
+    }
+
+    @Test
     fun newFeatureScreensKeepTheCanonicalOriginalStyleHeader() {
         legacyHeaderScreenNames.forEach { fileName ->
             val source = projectFile(

@@ -159,9 +159,9 @@ class DeviceHealthPanelTest {
         }
 
         composeRule.onNodeWithTag("device_health.signal_quality_notice")
-            .assertTextContains("chưa thu được âm tim/phổi")
+            .assertTextContains("Mic chưa thu được âm tim/phổi")
         composeRule.onNodeWithTag("device_health.metric.signal_quality")
-            .assertTextContains("quá yếu")
+            .assertTextContains("Tín hiệu quá yếu")
     }
 
     @Test

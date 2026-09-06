@@ -546,7 +546,6 @@
     <string name="device_management_info">Dùng mã truy cập hoặc QR do Platform Admin cấp để thêm thiết bị. Quyền xem, kết nối Wi-Fi hay quản lý được máy chủ giới hạn riêng cho từng thiết bị.</string>
     <string name="device_management_read_only_info">Mã hiện tại cho phép xem trạng thái thiết bị. Hãy dùng mã “Xem &amp; kết nối Wi-Fi” hoặc “Quản lý thiết bị” nếu cần cấu hình Wi-Fi.</string>
     <string name="device_management_assigned_info">Bạn có thể xem trạng thái và kết nối Wi-Fi cho thiết bị này. Chỉ mã “Quản lý thiết bị” mới cho phép chỉnh sửa hoặc gỡ liên kết.</string>
-    <string name="device_management_empty_read_only_message">Chưa có thiết bị nào. Hãy nhập mã truy cập hoặc quét QR do quản trị viên cấp.</string>
     <string name="device_management_unknown_device">Thiết bị Shcare</string>
 
     <string name="device_access_title">Thêm thiết bị</string>
@@ -558,10 +557,8 @@
     <string name="device_access_code_support">Bạn có thể nhập mã hoặc quét QR. Mỗi mã chỉ được dùng một lần và có thời hạn.</string>
     <string name="device_access_scan_qr">Quét QR</string>
     <string name="device_access_submit">Thêm thiết bị</string>
-    <string name="device_access_submitting">Đang xác nhận với máy chủ…</string>
     <string name="device_access_security_title">Quyền được cấp theo mã</string>
     <string name="device_access_security_message">“Xem &amp; kết nối Wi-Fi” không cho phép chỉnh sửa hoặc gỡ thiết bị. “Quản lý thiết bị” cho phép điều chỉnh đúng thiết bị này nhưng không cấp quyền quản trị hệ thống.</string>
-    <string name="device_access_scan_cancelled">Đã đóng trình quét QR.</string>
     <string name="device_access_scan_failed">Không thể mở trình quét QR. Bạn vẫn có thể nhập mã thủ công.</string>
     <string name="device_access_code_invalid">Mã truy cập hoặc QR không đúng định dạng.</string>
     <string name="device_access_code_used">Mã này đã được một tài khoản khác sử dụng.</string>
@@ -750,7 +747,6 @@
     <string name="record_detail_measure_lung">Đo phổi</string>
     <string name="record_detail_stop">Dừng ghi và lưu</string>
     <string name="record_detail_stopping">Đang gửi yêu cầu dừng…</string>
-    <string name="record_detail_waveform_title">Dạng sóng đã xử lý</string>
     <string name="record_detail_heart_waveform_title">Dạng sóng âm tim đã xử lý</string>
     <string name="record_detail_lung_waveform_title">Dạng sóng âm phổi đã xử lý</string>
     <string name="record_detail_waveform_loading">Đang tải dạng sóng thật từ hệ thống…</string>

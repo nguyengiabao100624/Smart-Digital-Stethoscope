@@ -3320,4 +3320,12 @@ KLTN report artifacts generated from this evidence set:
 - [x] Device health panel shows a warning notice for `too_weak` ("Mic chưa thu được âm tim/phổi" with placement/wiring guidance) and `clipped` (saturation guidance), plus a "Chất lượng tín hiệu mic" metric row; `detected`/unknown show no notice. Notice carries merged TalkBack semantics (`device_health.signal_quality_notice`).
 - [x] Signal quality is advisory only: it never downgrades presence/online status (verified by unit test).
 - [x] Gates at takeover: `:app:testDebugUnitTest` `893/893` PASS including `DeviceHealthSnapshotTest` `9/9` (4 new cases); `:app:compileDebugAndroidTestKotlin` PASS with 2 new `DeviceHealthPanelTest` cases; `:app:assembleDebug` PASS with debug APK `48,795,198` bytes, SHA-256 `2D7BBAE331EFEDE1EADA492A5C63218E4C0E8601D7B60D9A56C607A1533630B6` (built, not installed at takeover); `:app:lintDebug` PASS with `0` errors / `0` warnings.
-- [ ] Instrumented panel tests on Xiaomi and a live observation of the warning against real COM9 telemetry remain open; no APK was reinstalled at takeover.
+- [x] Superseded by Codex continuation: panel plus AI composer instrumentation are `10/10` PASS on Xiaomi and the final APK was installed. Fresh COM9 telemetry is steady `too_weak` after boot transients; this validates truthful warning state but does not close physical heart/lung capture.
+
+## 2026-09-06 — Codex continuation after Claude takeover
+
+- [x] Reconciled the pasted Claude transcript with the current Git graph and dirty tree. Six focused Claude commits are present locally; only the interrupted test assertion plus a previously untracked composer contract remained to close.
+- [x] Corrected the merged-semantics assertion using complete text nodes, removed four unused Android resources and the obsolete debug-only SDK branch, then reran Android JVM `124` suites / `893/893`, lint `0` actionable issues, assemble and androidTest compile.
+- [x] Built/installed the final debug APK on Xiaomi and ran `DeviceHealthPanelTest` plus `AIAssistantScreenTest`: `10/10` PASS, no AndroidRuntime crash in the bounded launch check. APK SHA-256 `A1483FF6693ADDF378CB880B465C76CE382FF59F3183B11EBADECB8C6F4E8C6D`.
+- [x] Revalidated firmware/backend contracts: source/golden `4/4`, device security `65/65`. Fresh COM9 serial reached authenticated WSS and reported both slots, but stable raw RMS remained background-level (`15-65`) with `audioSignalQuality:too_weak`.
+- [ ] Hardware acoustic acceptance remains open. A transient `detected` window at boot is not evidence of heart/lung capture; require repeatable capsule-stimulus/auscultation evidence before closing G3.

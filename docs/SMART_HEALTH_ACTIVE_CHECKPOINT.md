@@ -1,5 +1,13 @@
 # Shcare Active Restart Checkpoint
 
+## 2026-09-06 Codex continuation after Claude takeover
+
+- Claude's takeover work is present as six focused commits `afbf1d5d..2635a8b7` on local `main` (currently ahead of `origin/main`). The white Android light canvas, ChatGPT-style Shcare composer, dual-mic DSP classification/gated AGC, backend `audioSignalQuality` allowlist, Android mic-quality notice and Gradle/AGP upgrade are committed; unrelated untracked user files remain untouched.
+- Codex closed the one unfinished physical Compose assertion from the Claude session and reran both relevant suites on Xiaomi `21081111RG`: `DeviceHealthPanelTest` plus `AIAssistantScreenTest` are **10/10 PASS**. The rebuilt debug APK was installed successfully; artifact is `48,793,374` bytes, SHA-256 `A1483FF6693ADDF378CB880B465C76CE382FF59F3183B11EBADECB8C6F4E8C6D`.
+- Fresh aggregate gates are Android JVM `124` suites / `893/893`, lint `0` actionable issues, assemble plus androidTest compile PASS; firmware source/golden contracts `4/4`; backend device-security smoke `65/65`. The previously untracked `AIAssistantComposerContractTest` is now part of the focused continuation slice.
+- Fresh bounded COM9 serial evidence shows the board joins Wi-Fi and reaches `Cloud device authentication accepted over WSS`. Both I2S slots emit data, but after boot transients settle their RMS is mostly only `15-65`; firmware correctly reports steady `audioSignalQuality:too_weak` and does not apply aggressive AGC to that noise floor.
+- Therefore UI/telemetry truthfulness and cloud transport are PASS, but **clear heart/lung acoustic capture is still OPEN**. No software gain change can substitute for physical acoustic coupling and a verified capsule/SEL/CHIPEN/shared-SD path. G3 remains PARTIAL and G4 remains gated; approved AI provider plus signed OTA/rollback proof also remain open.
+
 ## 2026-09-06 mic signal-quality warning and session-takeover checkpoint
 
 - Takeover context: Codex session `01a039de` stopped at ~01:29 UTC on 2026-09-06 mid-task. Everything from 2026-09-06 00:43 UTC onward remained **uncommitted** in the working tree: Android white-theme + pill-composer UI remake (`Theme.kt`, `AIAssistantScreen.kt`, `strings.xml`, tests), firmware DSP overhaul (`main.cpp`, `ShcareDeviceProtocol.h/cpp`, dual-mic tests/fixtures), `deviceSessionSecurity.js`/smoke additions and a Gradle wrapper bump. Last pushed commit remains `07410e5c`.

@@ -1,6 +1,17 @@
 # Smart Health - Production Backlog
 
-Last updated: 2026-09-05
+Last updated: 2026-09-06
+
+## 2026-09-06 mic-quality warning and uncommitted DSP/UI slice
+
+- [x] Surface `audioSignalQuality` telemetry on Android: `SmartDeviceTelemetry` → `DeviceHealthSnapshot.audioSignalQualityKind` (`detected|too_weak|clipped`, normalized), warning notice plus "Chất lượng tín hiệu mic" metric in the device health panel; advisory-only and never downgrades presence.
+- [x] Pass JVM `893/893` (includes `DeviceHealthSnapshotTest` 4 new cases) and androidTest compile with 2 new `DeviceHealthPanelTest` cases.
+- [ ] Commit the dirty 2026-09-06 slice in focused groups: firmware DSP (`main.cpp`, `ShcareDeviceProtocol.h/cpp`, dual-mic tests/fixtures), Android UI remake (`Theme.kt`, `AIAssistantScreen.kt`, `strings.xml`, tests), mic-quality warning, web-monitor security touches, Gradle wrapper bump. Never `git add -A` wholesale and never destroy dirty work.
+- [ ] Run the new `DeviceHealthPanelTest` cases on Xiaomi and reinstall the APK carrying the warning UI; observe the notice against live COM9 telemetry.
+- [ ] Repair the slot-1 Right mic hardware path (3.3 V, GND, CHIPEN, SEL continuity, GPIO11/12/10, capsule obstruction), then rerun per-capsule tap tests and bounded COM9 serial evidence. Software already reports `too_weak` truthfully; do not amplify noise to fake signal.
+- [ ] Re-provision the board onto an available 2.4 GHz network through the App secure field only; keep Wi-Fi secrets out of source, shell arguments, logs and handoff documents.
+- [ ] Redesign the 50/100 Hz notch so it stops cutting the 25–250 Hz heart band (narrower or adaptive notches) — after real signal returns.
+- [ ] Configure the approved server-only AI provider (`AI_PROVIDER_ENDPOINT/API_KEY/MODEL`) and run a non-sensitive canary before PHI; signed OTA/rollback on the enrolled board remains open.
 
 ## 2026-09-05 network telemetry and production transport closure
 

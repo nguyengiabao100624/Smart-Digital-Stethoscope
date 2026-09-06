@@ -1,5 +1,14 @@
 # Shcare Active Restart Checkpoint
 
+## 2026-09-06 mic signal-quality warning and session-takeover checkpoint
+
+- Takeover context: Codex session `01a039de` stopped at ~01:29 UTC on 2026-09-06 mid-task. Everything from 2026-09-06 00:43 UTC onward remained **uncommitted** in the working tree: Android white-theme + pill-composer UI remake (`Theme.kt`, `AIAssistantScreen.kt`, `strings.xml`, tests), firmware DSP overhaul (`main.cpp`, `ShcareDeviceProtocol.h/cpp`, dual-mic tests/fixtures), `deviceSessionSecurity.js`/smoke additions and a Gradle wrapper bump. Last pushed commit remains `07410e5c`.
+- Session-reported physical claims from that final stretch (not re-verified here): Xiaomi UI checks `5/5` with evidence `docs/report-evidence/2026-09-06-android-chat-white-ui-runtime.png`, production chain Android → backend → ESP WSS → audio-v2 → WAV `1/1`, and two COM9 flashes (NVS/eFuse preserved) whose serial reported `audioSignalQuality: too_weak`.
+- Firmware DSP state: heart profile 25–250 Hz, lung 80–2000 Hz, slot-signal classification `too_weak/detected/clipped`, healthy-slot selection no longer prefers low-noise channels, AGC gated on biological-signal detection. Backend allowlist accepts exactly those three `audioSignalQuality` values.
+- Completed at takeover (Claude): Android now parses `audioSignalQuality` end-to-end (`SmartDeviceTelemetry` → `DeviceHealthSnapshot.audioSignalQualityKind` with normalized `AudioSignalQuality`) and the device health panel shows a warning notice plus metric for `too_weak`/`clipped`; `detected`/unknown show no notice. Signal quality is advisory only and never downgrades presence/online status.
+- Proof at takeover: `:app:testDebugUnitTest` `893/893` PASS (includes `DeviceHealthSnapshotTest` `9/9` with 4 new cases), `:app:compileDebugAndroidTestKotlin` PASS with 2 new `DeviceHealthPanelTest` cases (physical run pending), `assembleDebug` PASS — debug APK `48,795,198` bytes, SHA-256 `2D7BBAE331EFEDE1EADA492A5C63218E4C0E8601D7B60D9A56C607A1533630B6` (built, not installed) — and `lintDebug` PASS with `0` errors / `0` warnings.
+- Exact resume steps: (1) commit the dirty slices (firmware DSP, Android UI, mic-quality warning, build infra) — do not `git add -A` wholesale; (2) run the new instrumented panel tests on Xiaomi; (3) repair the slot-1 Right mic hardware path (3.3 V/GND/CHIPEN/SEL continuity, capsule) — physical signal is still the core blocker, software already reports it truthfully; (4) configure the approved AI provider before claiming real chatbot inference.
+
 ## 2026-09-05 dual-microphone wiring checkpoint
 
 - "Mic 2" in current diagnostics means I2S Right/slot 1, not a guaranteed enclosure side. For MSM261S4030H0, its `L/R` or `SEL` pin must be tied to 3.3 V; Left/slot 0 uses GND. Both modules require 3.3 V, common GND and CHIPEN high, and share `SCK=GPIO11`, `WS=GPIO12`, `SD=GPIO10`.

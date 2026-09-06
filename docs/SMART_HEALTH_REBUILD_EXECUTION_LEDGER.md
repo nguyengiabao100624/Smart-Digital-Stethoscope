@@ -1043,3 +1043,10 @@ Any unavailable emulator, board, credential or provider is recorded as `BLOCKED`
 - Added opaque scan filtering, identity verification, nonce-bound AES-GCM payload, bounded parser, acknowledgement gate and reboot. Android waits for backend presence before online.
 - PASS: Android JVM `119/857`, lint/assemble, and firmware development/production builds. Development firmware flashed on COM9 reports BLE ready, offline/no-WSS and two active microphones.
 - BLOCKED: App server connection and unavailable Windows Bluetooth (`0x800710DF`) prevent a full authenticated BLE HIL. G3 remains open; G4 pending.
+
+## 2026-09-06 — Takeover ledger: mic-quality warning slice (Codex session 01a039de → Claude)
+
+- Context: Codex session `01a039de` (25/08–06/09) stopped ~01:29 UTC on 06/09 mid-task. Its final slice — Android white-theme + pill-composer remake, firmware DSP overhaul (heart 25–250 Hz / lung 80–2000 Hz, slot-signal classification, AGC gated on biological signal), `audioSignalQuality` telemetry and Gradle wrapper bump — remained uncommitted; last pushed commit `07410e5c`.
+- Implemented (takeover slice): Android parses `audioSignalQuality` end-to-end (`SmartDeviceTelemetry` → `parseSmartDeviceTelemetry` → `DeviceHealthSnapshot.audioSignalQualityKind`) and the device health panel renders a warning notice + metric for `too_weak`/`clipped`; `detected`/unknown render no notice. Advisory-only: presence/online status is unaffected.
+- Gates: `:app:testDebugUnitTest` `893/893` PASS (new `DeviceHealthSnapshotTest` cases 4), `:app:compileDebugAndroidTestKotlin` PASS (new `DeviceHealthPanelTest` cases 2, physical run pending), `assembleDebug` PASS (debug APK `48,795,198` bytes, SHA-256 `2D7BBAE331EFEDE1EADA492A5C63218E4C0E8601D7B60D9A56C607A1533630B6`, not installed), `lintDebug` PASS with `0` errors/`0` warnings.
+- Open: commit dirty slices (never `git add -A`), physical panel proof on Xiaomi, slot-1 Right mic hardware repair, Wi-Fi re-provisioning via App secure field, approved AI provider, signed OTA/rollback. Software now reports the weak signal truthfully; the blocker is physical.

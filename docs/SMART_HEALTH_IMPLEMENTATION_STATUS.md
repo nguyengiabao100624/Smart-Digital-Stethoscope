@@ -3304,3 +3304,20 @@ KLTN report artifacts generated from this evidence set:
 - [x] Pass backend waveform `2/2`, AI `12/12`, audio worker `6/6`, API production smoke, backend syntax aggregate, Android full unit/lint/assemble and physical Xiaomi Compose tests: Chatbot `4/4`, record waveform/detail `3/3`.
 - [x] Install the production-targeting debug APK on Xiaomi `21081111RG`; SHA-256 `E062C0A4C82B0D2923E405E5846BFEBB2C53D7DFDD5C9AC58C1C774DE9AF9710`.
 - [ ] Real model inference remains blocked until an approved provider endpoint, model and server-only API key are configured on Render. No local/fabricated medical answer is used as a substitute.
+
+## 2026-09-06 — Chat UI remake, firmware DSP overhaul and mic-quality telemetry (recorded at takeover; work done by Codex session 01a039de, uncommitted)
+
+- [x] Android light theme background switched to plain white and the AI assistant composer rebuilt as a pill-style composer per the reference image: attach menu (Camera/Ảnh/Tệp), voice recording with separate Cancel/Stop controls, send only on the explicit arrow. Source and focused Compose tests changed; session-reported Xiaomi UI checks `5/5`.
+- [x] Firmware DSP overhaul: explicit profile parameters (heart 25–250 Hz, lung 80–2000 Hz), slot-signal classification `TooWeak/Detected/Clipped`, healthy-slot selection no longer prefers low-noise channels, AGC gated by biological-signal detection instead of blind amplification.
+- [x] Firmware emits `audioSignalQuality` in device telemetry JSON and serial diagnostics; backend `sanitizeDeviceTelemetry` allowlists exactly `too_weak|detected|clipped`.
+- [x] Session-reported physical evidence (not re-verified at takeover): COM9 flashed twice with NVS/eFuse preserved, serial `audioSignalQuality: too_weak`, Xiaomi UI `5/5`, production chain Android → backend → ESP WSS → audio-v2 → WAV `1/1`; screenshot `docs/report-evidence/2026-09-06-android-chat-white-ui-runtime.png`.
+- [ ] Physical heart/lung signal is still not captured: both slots report background-noise-level RMS and `too_weak`. The remaining blocker is the hardware path (capsule/wiring/analog front-end), not software classification.
+- [ ] The 50/100 Hz notch cuts into the 25–250 Hz heart band; identified but not yet redesigned.
+
+## 2026-09-06 — Android mic signal-quality warning (Claude takeover slice)
+
+- [x] Parse `audioSignalQuality` from device telemetry end-to-end: `SmartDeviceTelemetry` field, `parseSmartDeviceTelemetry`, `DeviceHealthSnapshot.audioSignalQuality` plus normalized `audioSignalQualityKind` (`AudioSignalQuality`: `detected|too_weak|clipped`). Blank/unknown wire values stay unknown instead of inventing state; case/whitespace normalized.
+- [x] Device health panel shows a warning notice for `too_weak` ("Mic chưa thu được âm tim/phổi" with placement/wiring guidance) and `clipped` (saturation guidance), plus a "Chất lượng tín hiệu mic" metric row; `detected`/unknown show no notice. Notice carries merged TalkBack semantics (`device_health.signal_quality_notice`).
+- [x] Signal quality is advisory only: it never downgrades presence/online status (verified by unit test).
+- [x] Gates at takeover: `:app:testDebugUnitTest` `893/893` PASS including `DeviceHealthSnapshotTest` `9/9` (4 new cases); `:app:compileDebugAndroidTestKotlin` PASS with 2 new `DeviceHealthPanelTest` cases; `:app:assembleDebug` PASS with debug APK `48,795,198` bytes, SHA-256 `2D7BBAE331EFEDE1EADA492A5C63218E4C0E8601D7B60D9A56C607A1533630B6` (built, not installed at takeover); `:app:lintDebug` PASS with `0` errors / `0` warnings.
+- [ ] Instrumented panel tests on Xiaomi and a live observation of the warning against real COM9 telemetry remain open; no APK was reinstalled at takeover.
